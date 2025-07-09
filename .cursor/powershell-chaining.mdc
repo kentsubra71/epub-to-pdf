@@ -1,0 +1,13 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+---
+description: Windows PowerShell command chaining syntax rules for terminal operations
+alwaysApply: true
+---
+
+# Windows PowerShell Command Chaining
+
+On this project (Hurix Solutions Portal), always use PowerShell syntax (e.g. semicolons or separate commands) for chaining commands. Do not use "&&" (which is not supported in Windows PowerShell) to avoid errors.

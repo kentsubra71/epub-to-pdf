@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  epub-to-pdf-converter:
+    build: .
+    image: epub-to-pdf-converter:latest
+    container_name: epub-to-pdf-converter
+    volumes:
+      # Mount local directories for input and output
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./debug:/app/debug
+    environment:
+      - JAVA_OPTS=-Xmx1024m -Xms256m
+    # Example usage: docker-compose run epub-to-pdf-converter input/book.epub output/book.pdf
+    profiles:
+      - manual
+    
+  # Development service for testing
+  epub-to-pdf-dev:
+    build: .
+    image: epub-to-pdf-converter:latest
+    container_name: epub-to-pdf-dev
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./src:/app/src:ro
+    environment:
+      - JAVA_OPTS=-Xmx1024m -Xms256m
+    working_dir: /app
+    command: tail -f /dev/null  # Keep container running for development
+    profiles:
+      - dev 
