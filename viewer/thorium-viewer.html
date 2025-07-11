@@ -213,7 +213,7 @@
       width: 8.5in !important;
       max-width: 8.5in !important;
       margin: 0 !important;
-      padding: 0.75in !important;
+      padding: 0 !important;
       box-sizing: border-box !important;
       background: white !important;
     }
@@ -228,13 +228,19 @@
     .pdf-mode .readium-section {
       page-break-after: always !important;
       min-height: 9.5in !important;
-      padding: 0.5in 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
       box-sizing: border-box !important;
-      width: 100% !important;
+      width: auto !important;
     }
     
     .pdf-mode .readium-section:last-child {
       page-break-after: avoid !important;
+    }
+    
+    /* Allow EPUB's own margin variables to control layout */
+    .pdf-mode .readium-section > *:not(header):not(ul):not(ol):not(figure.full-bleed:not(.audio)) {
+      margin: var(--body-margin-top, 1.5rem) var(--body-margin-right, 6rem) var(--body-margin-bottom, 0.5rem) var(--body-margin-left, 6rem) !important;
     }
     
     #debug { 
@@ -606,7 +612,7 @@
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
         line-height: 1.6;
         color: #333;
-        padding: 0.75in;
+        padding: ${document.body.classList.contains('pdf-mode') ? '0' : '0.75in'};
         box-sizing: border-box;
       `;
       
@@ -643,11 +649,11 @@
           sectionDiv.className = 'readium-section';
           sectionDiv.style.cssText = `
             page-break-after: always;
-            margin-bottom: 1rem;
-            padding: 1rem 0;
+            margin: 0;
+            padding: 0;
             background: white;
             min-height: 9.5in;
-            width: 100%;
+            width: auto;
             box-sizing: border-box;
             overflow-y: visible;
           `;
@@ -665,11 +671,22 @@
                 const bookName = currentBookName || publication.metadata.identifier;
                 const cleanBookName = bookName.replace('.epub', '');
                 const cssUrl = `/temp/${cleanBookName}/OEBPS/${href}`;
-                const linkElement = document.createElement('link');
-                linkElement.rel = 'stylesheet';
-                linkElement.href = cssUrl;
-                document.head.appendChild(linkElement);
-                log(`Loaded CSS: ${cssUrl}`);
+                
+                // Fetch the CSS and inject as <style> tag instead of <link>
+                try {
+                  const cssResponse = await fetch(cssUrl);
+                  if (cssResponse.ok) {
+                    const cssText = await cssResponse.text();
+                    const styleTag = document.createElement('style');
+                    styleTag.textContent = cssText;
+                    document.head.appendChild(styleTag);
+                    log(`Inlined CSS: ${cssUrl}`);
+                  } else {
+                    log(`Failed to load CSS: ${cssUrl} (${cssResponse.status})`, 'error');
+                  }
+                } catch (e) {
+                  log(`Failed to inline CSS from ${cssUrl}: ${e.message}`, 'error');
+                }
               }
             }
           }
