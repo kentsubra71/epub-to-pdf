@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple EPUB Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+</head>
+<body>
+    <div id="area" style="width: 600px; height: 400px;"></div>
+    <div id="log"></div>
+    
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+            console.log(message);
+        }
+        
+        // Test with a known working EPUB from the web
+        const testUrl = 'https://s3.amazonaws.com/moby-dick/moby-dick.epub';
+        
+        log('Testing with online EPUB...');
+        const book = ePub(testUrl);
+        
+        book.ready.then(() => {
+            log('Book ready!');
+            const rendition = book.renderTo('area', { width: 600, height: 400 });
+            return rendition.display();
+        }).then(() => {
+            log('Book displayed successfully!');
+        }).catch(error => {
+            log(`Error: ${error.message}`);
+        });
+    </script>
+</body>
+</html> 

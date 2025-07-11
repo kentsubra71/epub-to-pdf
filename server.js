@@ -192,80 +192,41 @@ app.post('/convert-to-pdf', (req, res) => {
   
   const viewerUrl = `http://localhost:${PORT}/viewer/thorium-viewer.html?book=${bookName}&pdf=true`;
   
-  // Define output paths for each converter
-  const outputPaths = {
-    puppeteer: path.join(__dirname, 'output', `${bookName}_puppeteer.pdf`),
-    wkhtmltopdf: path.join(__dirname, 'output', `${bookName}_wkhtmltopdf.pdf`),
-    playwright: path.join(__dirname, 'output', `${bookName}_playwright.pdf`)
-  };
+  // Define output path for Playwright only
+  const outputPath = path.join(__dirname, 'output', `${bookName}_playwright.pdf`);
 
-  console.log(`Starting PDF conversion comparison for book: ${bookName}`);
+  console.log(`Starting Playwright PDF conversion for book: ${bookName}`);
   console.log(`Using viewer URL: ${viewerUrl}`);
-  
-  // Track conversion results
-  const results = {};
-  let completedCount = 0;
-  
-  const checkAllComplete = () => {
-    if (completedCount === 3) {
-      console.log('All PDF conversions completed!');
-      console.log('Results:', results);
-      
-      // Return paths to all generated PDFs
-      const successfulPdfs = Object.entries(results)
-        .filter(([tool, result]) => result.success)
-        .map(([tool, result]) => ({ tool, path: `/output/${bookName}_${tool}.pdf` }));
-      
-      res.json({ 
-        success: true, 
-        message: `Generated ${successfulPdfs.length}/3 PDFs successfully`,
-        pdfs: successfulPdfs,
-        results: results
-      });
-    }
-  };
-  
-  // Start Puppeteer conversion
-  const puppeteerConversion = spawn('node', ['convert.js', viewerUrl, outputPaths.puppeteer], {
-    stdio: 'inherit'
-  });
-  
-  puppeteerConversion.on('close', (code) => {
-    results.puppeteer = { success: code === 0, exitCode: code };
-    completedCount++;
-    console.log(`Puppeteer conversion finished with code ${code}`);
-    checkAllComplete();
-  });
-  
-  // Skip wkhtmltopdf for now (not installed)
-  results.wkhtmltopdf = { success: false, exitCode: -1, error: 'wkhtmltopdf binary not installed' };
-  completedCount++;
-  console.log('wkhtmltopdf skipped (binary not installed)');
-  checkAllComplete();
-  
+
   // Start Playwright conversion with Opus fixes
-  const playwrightConversion = spawn('node', ['convert-playwright.js', viewerUrl, outputPaths.playwright], {
+  const playwrightConversion = spawn('node', ['convert-playwright.js', viewerUrl, outputPath], {
     stdio: 'inherit'
   });
-  
+
   playwrightConversion.on('close', (code) => {
-    results.playwright = { success: code === 0, exitCode: code };
-    completedCount++;
-    console.log(`Playwright conversion with Opus fixes finished with code ${code}`);
-    checkAllComplete();
-  });
-  
-  // Set a timeout in case some conversions hang
-  setTimeout(() => {
-    if (completedCount < 3) {
-      console.log('Some conversions are taking too long, returning partial results');
-      res.json({ 
-        success: false, 
-        message: 'Some PDF conversions timed out',
-        results: results,
-        completedCount: completedCount
+    const success = code === 0;
+    console.log(`[Playwright] Conversion finished with code ${code}`);
+    if (success) {
+      res.json({
+        success: true,
+        message: 'PDF generated successfully with Playwright.',
+        pdf: `/output/${bookName}_playwright.pdf`
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Playwright PDF conversion failed.',
+        exitCode: code
       });
     }
+  });
+
+  // Set a timeout in case conversion hangs
+  setTimeout(() => {
+    res.status(500).json({
+      success: false,
+      message: 'Playwright PDF conversion timed out.'
+    });
   }, 180000); // 3 minute timeout
 });
 

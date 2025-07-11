@@ -1,0 +1,169 @@
+@font-face {
+    font-family: "proximanova-regular"; 
+    src: url('../fonts/proximanova/proximanova-regular.ttf') format('truetype'),url('../fonts/proximanova-regular.woff') format('woff');
+}
+
+@font-face {
+    font-family: "proximanova-bold";
+    src: url('../fonts/proximanova/proximanova_bold.ttf') format('truetype'),url('../fonts/proximanova/proximanova_bold.woff') format('woff');
+}
+
+:root {
+    --defaultFont: "proximanova-regular";
+
+    /* Pallete Colors */
+    --clr-primary: #008C95;
+    --clr-secondary: #008C95;
+    --clr-tertiary: #000000;
+    --clr-quaternary: #000000;
+    --clr-quinary: #E8FFFB;
+    --clr-quinary0: #000000;
+    --clr-quinary1: #FFF6E4;
+    --clr-senary: #ede3de;
+    --clr-septenary: #E8FFFB;
+    --body-margin-top: 1.5rem !important;
+    --body-margin-right: 6rem;
+    --body-margin-bottom: 0.5rem !important;
+    --body-margin-left: 6rem;
+    --body-internal-component-margin: 1rem 0 1.5rem 0;
+    --header-top-bottom-padding: 0rem;
+    --header-left-right-padding: var(--body-margin-left);
+
+    /* Palette Colors */
+    --clr-header-text: var(--clr-secondary);
+    --clr-subheader-text: var(--clr-secondary);
+    --clr-header-bg: var(--clr-primary);
+    --clr-header-gradient: linear-gradient(111.85deg, var(--clr-primary) 2.06%, var(--clr-quaternary) 98.1%);
+    --clr-header-h: var(--clr-quaternary);
+    --clr-para-text: var(--clr-tertiary);
+    --clr-para-bg: var(--clr-secondary);
+    --clr-callout-header-text: var(--clr-senary);
+    --clr-callout-header-bg: var(--clr-primary);
+    --clr-callout-text: var(--clr-quaternary);
+    --clr-callout-bg: var(--clr-senary);
+    --clr-callout-outline: var(--clr-primary);
+    --clr-Table-header-text: var(--clr-quinary);
+    --clr-Table-header-bg: var(--clr-quaternary);
+    --clr-Table-header-outline: var(--clr-quinary);
+    --clr-Table-header-outline1: var(--clr-quinary0);
+    --clr-Table-body-odd-bg: var(--clr-quinary);
+    --clr-Table-body-even-bg: var(--clr-quinary);
+    --clr-Table-body-odd-bg1: var(--clr-quinary1);
+    --clr-Table-body-even-bg1: var(--clr-quinary1);
+    --clr-Table-body-text: var(--clr-quaternary);
+    --clr-Table-body-outline: var(--clr-quaternary);
+    --fs-table-header: 1.625rem;
+    --fs-table-body: 1.625rem;
+    --clr-article-header-text: var(--clr-primary);
+    --clr-article-text: var(--clr-primary);
+    --clr-article-outline: var(--clr-primary);
+    --clr-article-bg: var(--clr-secondary);
+    --clr-quote-text: var(--clr-quaternary);
+    --clr-quote-bg: var(--clr-quinary);
+    --clr-quote-outline: var(--clr-primary);
+    --clr-aside-bg: var(--clr-senary);
+    --clr-aside-header-text: var(--clr-primary);
+    --clr-aside-body-text: var(--clr-primary);
+
+    /* callout */
+    --callout-padding-header: 1rem 2rem;
+    --callout-padding-body: 0;
+    --callout-outline-color: var(--clr-primary);
+    --callout-bg: var(--clr-quinary);
+    --callout-border-radius: 10px;
+
+    /* HR */
+    --hr-color: var(--clr-primary);
+    --clr-Caption-text: var(--clr-tertiary);
+    --clr-pre-bg: var(--clr-quaternary);
+    --clr-pre-text: var(--clr-quinary);
+
+    /* Font Sizes (Ensure readability) */
+    --fs-hero-h1-text: 6.4rem;
+    --fs-hero-h2-text: 3.125rem;
+    --fs-hero-h3-text: 2rem;
+    --fs-hero-h4-text: 1.875rem;
+    --fs-hero-h5-text: 1.75rem;
+    --fs-hero-h6-text: 1.625rem;
+    --fs-subtitle-text: 1.5rem;
+    --fs-h1: 2.125rem;
+    --fs-h2: 2rem;
+    --fs-h3: 1.813rem;
+    --fs-h4: 1.75rem;
+    --fs-h5: 1.625rem;
+    --fs-h6: 1.5rem;
+    --fs-p: 1.625rem;
+    --fs-figcaption: 1.025rem;
+    --fs-callout-header: 1.375rem;
+    --fs-callout-body: 1.125rem;
+    --fs-article-header: 1.375rem;
+    --fs-article-body: 1.25rem;
+    --fs-aside-header: 1.375rem;
+    --fs-aside-body: 1.25rem;
+    --fs-quote-body: 1.25rem;
+    --fs-quote-author: 1rem;
+    --fs-media-caption: 0.75rem;
+    
+
+    /* Padding */
+    --pad-table-cell: 0.5rem;
+    --pad-callout-header: 1.25rem;
+    --pad-callout-text: 1.25rem;
+
+    /* Border Radius */
+    --br-callout-border: 0.5rem;   
+
+    /* Quotaion */
+    --quote-bgcolor: var(--clr-accent1);
+    --quote-border-left: 4px solid var(--clr-quote-outline);
+    --quote-internal-padding: 1.5rem;
+    --quote-padding-left: 6.5rem;
+    --quote-author-padding: 1rem 0 0 0;
+    --quote-author-textalign: right;
+    --quote-icon-size: 10rem;
+    --quote-icon-position: absolute;
+    --quote-icon-top: 5rem;
+    --quote-icon-left: 1rem;
+
+    /* Article */
+    --article-padding: 1rem 1rem 0.2rem 1rem;
+    --article-border-radius: 0.5rem;
+
+    /* ASIDE */
+    --aside-border-radius: 0.625rem;
+    --aside-padding: 2rem;
+
+    /* Dropcap */
+    --dropcap-font-size: 4rem;
+    --dropcap-line-height: 1.5rem;
+    --dropcap-margin: 0 0.1563em 0 0;
+    --dropcap-padding: 0.1406em 0.1875em;
+    --dropcap-border-radius: 0.5rem;
+    --dropcap-bg: var(--clr-secondary);
+    --dropcap-text: var(--clr-primary);
+
+    /* Indent */
+    --para-indent: 1.25rem;
+
+    /* Margin */
+    --para-margin-top: 0em;
+    --para-margin-bottom: 0em;
+
+    /* Sidebar With icon */
+    --sidebar-with-icon-color: var(--clr-primary);
+    --sidebar-with-icon-border: 1px solid var(--sidebar-with-icon-color);
+    --sidebar-with-icon-border-radius: 10px;
+    --sidebar-with-icon-bg: var(--clr-senary);
+    
+    /* Two-Column-Image-Text */
+    --two-column-image-width: 20%;
+
+    /* Breakpoints */
+    --desktop-size: 825px;
+    --tablet-size: 624px;
+    --mobile-size: 348px;
+
+}
+
+
+strong{font-family: proximanova-bold !important; }

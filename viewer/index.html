@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>EPUB.js PDF Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    
+    /* Frontend Interface Styles */
+    .interface {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .interface h1 {
+      margin: 0 0 20px 0;
+      font-size: 28px;
+      font-weight: 300;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+    }
+    
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: -9999px;
+      opacity: 0;
+      width: 0.1px;
+      height: 0.1px;
+    }
+    
+    .file-input-label {
+      background: rgba(255,255,255,0.2);
+      border: 2px dashed rgba(255,255,255,0.5);
+      padding: 15px 25px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-block;
+    }
+    
+    .file-input-label:hover {
+      background: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.8);
+    }
+    
+    .btn {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+    
+    .btn:hover {
+      background: #45a049;
+      transform: translateY(-1px);
+    }
+    
+    .btn:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .btn-export {
+      background: #ff6b6b;
+    }
+    
+    .btn-export:hover {
+      background: #ff5252;
+    }
+    
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .status.success {
+      background: rgba(76, 175, 80, 0.2);
+      border: 1px solid rgba(76, 175, 80, 0.5);
+    }
+    
+    .status.error {
+      background: rgba(244, 67, 54, 0.2);
+      border: 1px solid rgba(244, 67, 54, 0.5);
+    }
+    
+    .status.info {
+      background: rgba(33, 150, 243, 0.2);
+      border: 1px solid rgba(33, 150, 243, 0.5);
+    }
+    
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: #4CAF50;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    
+    /* Viewer Styles */
+    #viewer { 
+      width: 100vw; 
+      height: calc(100vh - 120px);
+      border: 1px solid #ddd;
+      margin-top: 10px;
+      position: relative;
+    }
+    
+    /* Single Page Mode - Hide navigation elements */
+    #viewer button,
+    #viewer .arrow,
+    #viewer .nav,
+    #viewer .navigation,
+    #viewer .next,
+    #viewer .prev,
+    #viewer .toc-link,
+    #viewer .epub-navigation {
+      display: none !important;
+    }
+    
+    /* Disable TOC links and navigation */
+    #viewer a[href^="#"],
+    #viewer a[onclick],
+    #viewer .toc a {
+      pointer-events: none !important;
+      text-decoration: none !important;
+      color: inherit !important;
+      cursor: default !important;
+    }
+    
+    /* Ensure single page display */
+    #viewer iframe {
+      width: 100% !important;
+      height: 100% !important;
+      border: none;
+    }
+    
+    /* Hide epub.js default navigation */
+    #viewer .epub-container .epub-view button,
+    #viewer .epub-container .epub-view .arrow {
+      display: none !important;
+    }
+    
+    #debug { 
+      position: fixed; 
+      top: 10px; 
+      right: 10px; 
+      background: rgba(0,0,0,0.8); 
+      color: white; 
+      padding: 10px; 
+      font-family: monospace; 
+      font-size: 12px; 
+      max-width: 400px; 
+      max-height: 300px; 
+      overflow: auto; 
+      z-index: 1000;
+      border-radius: 4px;
+    }
+    
+    /* Print Mode Styles */
+    .print-mode #viewer { 
+      width: 100vw; 
+      height: 100vh; 
+      border: none;
+      margin: 0;
+    }
+    
+    .print-mode .interface {
+      display: none;
+    }
+    
+    @media print {
+      body { background: white; }
+      #viewer { width: 100vw; height: 100vh; }
+      #debug, .interface { display: none; }
+      img, table, figure, .caption {
+        page-break-inside: avoid;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+      }
+      .page-break, [data-page-break] {
+        page-break-before: always;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Frontend Interface -->
+  <div class="interface" id="interface">
+    <h1>📚 EPUB to PDF Converter</h1>
+    <div class="controls">
+      <div class="file-input-wrapper">
+        <input type="file" id="epub-file" accept=".epub" />
+        <label for="epub-file" class="file-input-label">
+          📁 Choose EPUB File
+        </label>
+      </div>
+      <button id="export-pdf-btn">
+        <i class="fas fa-file-pdf"></i> Export to PDF
+      </button>
+      <button id="reload-epub-btn">
+        <i class="fas fa-sync-alt"></i> Reload EPUB
+      </button>
+    </div>
+    <div id="status-container">
+      <div id="status-message">Ready</div>
+    </div>
+    <div class="progress-bar" id="progress-bar" style="display: none;">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+  
+  <div id="viewer"></div>
+  <div id="debug"></div>
+  
+  <script>
+    const debug = document.getElementById('debug');
+    const statusDiv = document.getElementById('status-message');
+    const progressBar = document.getElementById('progress-bar');
+    const progressFill = document.getElementById('progress-fill');
+    const exportBtn = document.getElementById('export-pdf-btn');
+    const reloadBtn = document.getElementById('reload-epub-btn');
+    const epubFileInput = document.getElementById('epub-file');
+    
+    let currentBookName = null;
+    let currentContentPath = null;
+    
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logEntry = document.createElement('div');
+      logEntry.style.color = type === 'error' ? '#ff6b6b' : type === 'warn' ? '#ffd93d' : '#6bcf7f';
+      logEntry.textContent = `[${timestamp}] ${message}`;
+      debug.appendChild(logEntry);
+      debug.scrollTop = debug.scrollHeight;
+      console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+    
+    function showStatus(message, type = 'info') {
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+      statusDiv.style.display = 'block';
+      
+      if (type === 'success') {
+        setTimeout(() => {
+          statusDiv.style.display = 'none';
+        }, 5000);
+      }
+    }
+    
+    function showProgress(percent) {
+      progressBar.style.display = 'block';
+      progressFill.style.width = `${percent}%`;
+      
+      if (percent >= 100) {
+        setTimeout(() => {
+          progressBar.style.display = 'none';
+        }, 1000);
+      }
+    }
+    
+    function hideProgress() {
+      progressBar.style.display = 'none';
+    }
+
+    log('epub.js viewer script loaded');
+    
+    // Get EPUB filename from query string or uploaded file
+    function getEpubFile() {
+      const params = new URLSearchParams(window.location.search);
+      const epubParam = params.get('epub');
+      if (epubParam) {
+        return epubParam;
+      }
+      return currentBookName ? currentBookName : null;
+    }
+    
+    // Check if we're in print mode
+    const urlParams = new URLSearchParams(window.location.search);
+    const isPrintMode = urlParams.get('print') === 'true';
+    
+    if (isPrintMode) {
+      log('Print mode enabled - will render all sections');
+      document.body.classList.add('print-mode');
+    }
+    
+    // File upload handler
+    epubFileInput.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      if (!file.name.toLowerCase().endsWith('.epub')) {
+        showStatus('Please select a valid EPUB file', 'error');
+        return;
+      }
+      
+      currentBookName = file.name;
+      showStatus('Uploading EPUB file...', 'info');
+      showProgress(10);
+      
+      try {
+        // Upload file to server
+        log(`Uploading file: ${file.name} (${file.size} bytes)`);
+        const formData = new FormData();
+        formData.append('epub', file);
+        
+        const response = await fetch('/upload-epub', {
+          method: 'POST',
+          body: formData
+        });
+        
+        log(`Upload response status: ${response.status}`);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          log(`Upload error response: ${errorText}`, 'error');
+          throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+        }
+        
+        const result = await response.json();
+        showProgress(50);
+        
+        if (result.success) {
+          log(`EPUB uploaded successfully. Content path: ${result.contentPath}`);
+          showStatus('EPUB processed! Loading viewer...', 'success');
+          
+          // Load the EPUB in viewer from the extracted content path
+          await loadEpubInViewer(result.contentPath, result.bookName);
+          
+          exportBtn.disabled = false;
+          reloadBtn.disabled = false;
+        } else {
+          throw new Error(result.message || 'Processing failed.');
+        }
+        
+      } catch (error) {
+        log(`Upload error: ${error.message}`, 'error');
+        showStatus(`Upload failed: ${error.message}`, 'error');
+      }
+    });
+    
+    // Export button handler
+    exportBtn.addEventListener('click', async () => {
+      if (!window.currentBookName) {
+        showStatus('No EPUB loaded to export.', 'error');
+        return;
+      }
+      showStatus('Starting PDF conversion...', 'busy');
+      try {
+        const response = await fetch('/convert-to-pdf', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ bookName: window.currentBookName }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server responded with ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.success) {
+          const link = document.createElement('a');
+          link.href = result.pdfPath;
+          link.target = '_blank';
+          link.textContent = 'Download PDF';
+          showStatus(`PDF generated! `, 'success');
+          statusDiv.appendChild(link);
+
+        } else {
+          throw new Error(result.message || 'Unknown error during conversion.');
+        }
+      } catch (error) {
+        console.error('Error during PDF conversion:', error);
+        showStatus(`PDF generation failed: ${error.message}`, 'error');
+      }
+    });
+    
+    // Reload button handler
+    reloadBtn.addEventListener('click', () => {
+      if (window.currentContentPath) {
+        loadEpubInViewer(window.currentContentPath, window.currentBookName);
+      }
+    });
+    
+    // Function to load EPUB in viewer
+    async function loadEpubInViewer(contentPath, bookName) {
+      showStatus('Loading EPUB in viewer...', 'info');
+      const viewer = document.getElementById('viewer');
+      viewer.innerHTML = `<div style="padding: 20px; text-align: center;">Loading EPUB...</div>`;
+      
+      try {
+        await initializeViewer(contentPath);
+        window.currentBookName = bookName;
+        window.currentContentPath = contentPath;
+        
+      } catch (error) {
+        log(`Viewer load error: ${error.message}`, 'error');
+        showStatus(`Failed to load EPUB: ${error.message}`, 'error');
+        viewer.innerHTML = `<div style="padding: 20px; text-align: center; color: red;">Failed to load EPUB.<br>${error.message}</div>`;
+      }
+    }
+    
+    function initializeViewer(contentPath) {
+      return new Promise(async (resolve, reject) => {
+        log(`Initializing viewer with content: ${contentPath}`);
+        
+        try {
+          // Parse the book name from contentPath
+          const bookName = contentPath.split(/[\\\/]/)[0];
+          log(`Book name extracted: ${bookName}`);
+          
+          // Load the content.opf file to get the spine information
+          const opfResponse = await fetch(`/temp/${bookName}/OEBPS/content.opf`);
+          if (!opfResponse.ok) {
+            throw new Error(`Failed to load content.opf: ${opfResponse.status}`);
+          }
+          
+          const opfText = await opfResponse.text();
+          const parser = new DOMParser();
+          const opfDoc = parser.parseFromString(opfText, 'application/xml');
+          
+          // Extract spine items
+          const spineItems = Array.from(opfDoc.querySelectorAll('spine itemref')).map(item => {
+            const idref = item.getAttribute('idref');
+            const manifestItem = opfDoc.querySelector(`manifest item[id="${idref}"]`);
+            return manifestItem ? manifestItem.getAttribute('href') : null;
+          }).filter(Boolean);
+          
+          log(`Found ${spineItems.length} spine items`);
+          
+          const viewer = document.getElementById('viewer');
+          viewer.innerHTML = ''; // Clear for rendition
+          viewer.style.height = 'auto'; // Allow full height
+          viewer.style.overflow = 'visible'; // Show all content
+          
+          // Render all sections sequentially
+          for (let i = 0; i < spineItems.length; i++) {
+            const itemHref = spineItems[i];
+            log(`Rendering section ${i + 1}/${spineItems.length}: ${itemHref}`);
+            
+            try {
+               // Load the section content directly from temp directory
+               const sectionUrl = `/temp/${bookName}/OEBPS/${itemHref}`;
+               log(`Loading section from: ${sectionUrl}`);
+              
+              const response = await fetch(sectionUrl);
+              if (!response.ok) {
+                throw new Error(`Failed to load section: ${response.status}`);
+              }
+              
+              const htmlContent = await response.text();
+              log(`Section content length: ${htmlContent.length}`);
+              
+              // Create a div for this section
+              const sectionDiv = document.createElement('div');
+              sectionDiv.className = 'epub-section';
+              sectionDiv.style.pageBreakAfter = 'always';
+              sectionDiv.style.marginBottom = '20px';
+              sectionDiv.style.padding = '20px';
+              sectionDiv.style.border = '1px solid #eee';
+              
+              // Parse the HTML content
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(htmlContent, 'text/html');
+              
+              // Load CSS files from the head section
+              const head = doc.head;
+              if (head) {
+                const styleLinks = head.querySelectorAll('link[rel="stylesheet"]');
+                for (const link of styleLinks) {
+                  const href = link.getAttribute('href');
+                                     if (href && !href.startsWith('http')) {
+                     const cssUrl = `/temp/${bookName}/OEBPS/${href}`;
+                     const linkElement = document.createElement('link');
+                    linkElement.rel = 'stylesheet';
+                    linkElement.href = cssUrl;
+                    document.head.appendChild(linkElement);
+                  }
+                }
+              }
+              
+              // Extract body content
+              if (doc.body) {
+                sectionDiv.innerHTML = doc.body.innerHTML;
+                log(`Section ${i + 1} body content length: ${doc.body.innerHTML.length}`);
+              } else {
+                sectionDiv.innerHTML = htmlContent;
+                log(`Section ${i + 1} full content length: ${htmlContent.length}`);
+              }
+              
+              viewer.appendChild(sectionDiv);
+              
+              // Fix image paths
+              const images = sectionDiv.querySelectorAll('img');
+              log(`Found ${images.length} images in section ${i + 1}`);
+              
+              images.forEach((img, imgIndex) => {
+                const originalSrc = img.getAttribute('src');
+                                 if (originalSrc && !originalSrc.startsWith('http')) {
+                   let newSrc;
+                   if (originalSrc.startsWith('../')) {
+                     newSrc = `/temp/${bookName}/OEBPS/${originalSrc.substring(3)}`;
+                   } else {
+                     newSrc = `/temp/${bookName}/OEBPS/xhtml/${originalSrc}`;
+                   }
+                  img.src = newSrc;
+                  log(`Image ${imgIndex + 1} path fixed: "${originalSrc}" → "${newSrc}"`);
+                }
+              });
+              
+            } catch (sectionError) {
+              log(`Error loading section ${itemHref}: ${sectionError.message}`, 'error');
+            }
+          }
+          
+          log('All sections rendered successfully');
+          showStatus('EPUB loaded successfully!', 'success');
+          window.readyForPdf = true;
+          resolve();
+          
+        } catch (error) {
+          log(`Viewer initialization error: ${error.message}`, 'error');
+          reject(error);
+        }
+      });
+    }
+
+    // No longer needed with the new architecture
+    // function forceSingleColumnMode() {}
+    // function removeNavigationElements() {}
+
+    // Initialize based on mode and URL parameters
+    const bookParam = urlParams.get('book');
+    if (bookParam) {
+      log(`Loading book from URL parameter: ${bookParam}`);
+      // Load book directly from extracted files
+      const contentPath = `${bookParam}/OEBPS/content.opf`;
+      loadEpubInViewer(contentPath, bookParam);
+    } else if (isPrintMode) {
+      initializeViewer();
+    } else {
+      log('On standby. Please upload an EPUB or load the test file.');
+      showStatus('Please upload an EPUB or load the test file.', 'info');
+      // checkForExistingEpub(); // Temporarily disabled
+    }
+
+    // Function to check for existing EPUB files
+    async function checkForExistingEpub() {
+      try {
+        // Check if the sample EPUB exists
+        const response = await fetch('/epub/NL27_Grade_K_Unit_3.epub');
+        if (response.ok) {
+          log('Found existing EPUB file: NL27_Grade_K_Unit_3.epub');
+          currentBookName = 'NL27_Grade_K_Unit_3.epub';
+          await loadEpubInViewer('NL27_Grade_K_Unit_3.epub');
+          exportBtn.disabled = false;
+          showStatus('EPUB loaded! You can now export to PDF.', 'success');
+        }
+      } catch (error) {
+        log('No existing EPUB found, waiting for upload');
+        showStatus('Please upload an EPUB file to get started', 'info');
+      }
+    }
+
+    async function renderAllSections(book) {
+      log('Starting to render all sections for print mode');
+      
+      try {
+        await book.ready;
+        
+        const viewer = document.getElementById('viewer');
+        viewer.innerHTML = ''; // Clear existing content
+        viewer.style.height = 'auto'; // Allow full height
+        viewer.style.overflow = 'visible'; // Show all content
+        
+        const spine = book.spine;
+        log(`Rendering ${spine.items.length} sections`);
+        
+        // Track all images for loading
+        const allImages = [];
+        
+        for (let i = 0; i < spine.items.length; i++) {
+          const item = spine.items[i];
+          log(`Rendering section ${i + 1}/${spine.items.length}: ${item.href}`);
+          
+          try {
+            // Load the section content directly
+            const sectionUrl = `/epub/${getEpubFile().replace('.epub', '')}/OEBPS/${item.href}`;
+            log(`Loading section from: ${sectionUrl}`);
+            
+            const response = await fetch(sectionUrl);
+            if (!response.ok) {
+              throw new Error(`Failed to load section: ${response.status}`);
+            }
+            
+            const htmlContent = await response.text();
+            log(`Section content length: ${htmlContent.length}`);
+            
+            // Create a div for this section
+            const sectionDiv = document.createElement('div');
+            sectionDiv.className = 'epub-section';
+            sectionDiv.style.pageBreakAfter = 'always';
+            sectionDiv.style.marginBottom = '20px';
+            sectionDiv.style.padding = '20px';
+            
+            // Parse the HTML content
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlContent, 'text/html');
+            
+            // Load CSS files from the head section
+            const head = doc.head;
+            if (head) {
+              const styleLinks = head.querySelectorAll('link[rel="stylesheet"]');
+              for (const link of styleLinks) {
+                const href = link.getAttribute('href');
+                if (href && !href.startsWith('http')) {
+                  const cssUrl = `/epub/${getEpubFile().replace('.epub', '')}/OEBPS/${href}`;
+                  const linkElement = document.createElement('link');
+                  linkElement.rel = 'stylesheet';
+                  linkElement.href = cssUrl;
+                  document.head.appendChild(linkElement);
+                }
+              }
+            }
+            
+            // Extract body content and set proper base URL context
+            if (doc.body) {
+              sectionDiv.innerHTML = doc.body.innerHTML;
+              log(`Section ${i + 1} body content length: ${doc.body.innerHTML.length}`);
+            } else {
+              sectionDiv.innerHTML = htmlContent;
+              log(`Section ${i + 1} full content length: ${htmlContent.length}`);
+            }
+            
+            // Add base tag to ensure proper URL resolution context
+            const baseTag = document.createElement('base');
+            const sectionEpubFileName = getEpubFile();
+            if (sectionEpubFileName) {
+              baseTag.href = `/epub/${sectionEpubFileName.replace('.epub', '')}/OEBPS/xhtml/`;
+              sectionDiv.insertBefore(baseTag, sectionDiv.firstChild);
+              log(`Added base tag with href: ${baseTag.href}`);
+            }
+            
+            viewer.appendChild(sectionDiv);
+            
+            // CRITICAL FIX: Process ALL images and ensure proper URL resolution
+            const currentEpubFileName = getEpubFile();
+            if (!currentEpubFileName) {
+              log('Error: Could not determine EPUB filename for image path resolution', 'error');
+              return;
+            }
+            
+            const baseUrl = `/epub/${currentEpubFileName.replace('.epub', '')}/OEBPS/`;
+            log(`Using base URL for images: ${baseUrl}`);
+            
+            // Fix ALL images in this section - use querySelectorAll to catch everything
+            const allImages = sectionDiv.querySelectorAll('img');
+            log(`Found ${allImages.length} images in section ${i + 1}`);
+            
+            allImages.forEach((img, imgIndex) => {
+              const originalSrc = img.getAttribute('src');
+              log(`Processing image ${imgIndex + 1}: original src = "${originalSrc}"`);
+              
+              // Only process if src exists and is not already an absolute URL
+              if (originalSrc && !originalSrc.startsWith('http') && !originalSrc.startsWith('blob:') && !originalSrc.startsWith('data:')) {
+                let newSrc;
+                
+                if (originalSrc.startsWith('../')) {
+                  // Remove ../ and prepend base URL
+                  newSrc = baseUrl + originalSrc.substring(3);
+                } else if (originalSrc.startsWith('./')) {
+                  // Remove ./ and prepend base URL with xhtml/ context
+                  newSrc = baseUrl + 'xhtml/' + originalSrc.substring(2);
+                               } else if (originalSrc.startsWith('/')) {
+                  // Absolute path from root - prepend base URL without OEBPS
+                  newSrc = `/epub/${currentEpubFileName.replace('.epub', '')}` + originalSrc;
+                } else {
+                  // Direct relative path - assume it's relative to OEBPS
+                  newSrc = baseUrl + originalSrc;
+                }
+                
+                // Ensure the URL is properly formatted (remove double slashes except after protocol)
+                newSrc = newSrc.replace(/([^:]\/)\/+/g, '$1');
+                
+                // FORCE the image src change
+                img.removeAttribute('src');
+                img.setAttribute('src', newSrc);
+                img.src = newSrc; // Also set via property
+                
+                log(`Image ${imgIndex + 1} path fixed: "${originalSrc}" → "${newSrc}"`);
+              } else if (originalSrc) {
+                log(`Image ${imgIndex + 1} skipped (already absolute): "${originalSrc}"`);
+              } else {
+                log(`Image ${imgIndex + 1} has no src attribute`, 'warn');
+              }
+              
+              // Add image to tracking array for loading detection
+              allImages.push(img);
+            });
+            
+            // Fix CSS relative URLs for bullet points and other assets
+            const stylesheets = document.querySelectorAll('link[rel="stylesheet"]');
+            stylesheets.forEach(async (link) => {
+              try {
+                // Check if CSS file exists at the expected path
+                let cssUrl = link.href;
+                if (cssUrl.includes('/epub/') && cssUrl.includes('/css/')) {
+                  // Fix the URL structure - CSS files are in OEBPS/css/
+                  cssUrl = cssUrl.replace('/epub/', '/epub/').replace('/css/', '/OEBPS/css/');
+                }
+                
+                const response = await fetch(cssUrl);
+                if (!response.ok) {
+                  console.warn(`[WARN] CSS file not found: ${cssUrl} (${response.status})`);
+                  return;
+                }
+                
+                const cssText = await response.text();
+                
+                // Fix relative URLs in CSS (like bullet point images)
+                const fixedCss = cssText.replace(/url\(['"]?\.\.\/([^'")]+)['"]?\)/g, (match, relativePath) => {
+                  const fixedUrl = `${baseUrl}${relativePath}`;
+                  console.log(`[INFO] CSS URL fixed: ${match} → url('${fixedUrl}')`);
+                  return `url('${fixedUrl}')`;
+                });
+                
+                // Create new style element with fixed CSS
+                if (fixedCss !== cssText) {
+                  const style = document.createElement('style');
+                  style.textContent = fixedCss;
+                  document.head.appendChild(style);
+                  console.log(`[INFO] CSS file processed: ${cssUrl}`);
+                }
+              } catch (error) {
+                console.warn(`[WARN] Could not process CSS file: ${link.href}`, error);
+              }
+            });
+            
+          } catch (error) {
+            log(`Error rendering section ${i}: ${error.message}`, 'error');
+            
+            // Add error placeholder
+            const errorDiv = document.createElement('div');
+            errorDiv.innerHTML = `<p>Error loading section: ${item.href}</p><p>Error: ${error.message}</p>`;
+            errorDiv.style.color = 'red';
+            errorDiv.style.pageBreakAfter = 'always';
+            errorDiv.style.padding = '20px';
+            viewer.appendChild(errorDiv);
+          }
+        }
+        
+        log('All sections rendered successfully');
+        log(`Total images found: ${allImages.length}`);
+        
+        // Wait for all images to load
+        if (allImages.length > 0) {
+          log('Waiting for all images to load...');
+          await waitForAllContentReady(allImages);
+          log('All images loaded successfully');
+          
+          // Additional delay to ensure images are fully rendered
+          log('Waiting additional 2 seconds for image rendering...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          log('No images found to load');
+        }
+        
+        window.printRenderComplete = true;
+        
+      } catch (error) {
+        log(`Error in renderAllSections: ${error.message}`, 'error');
+      }
+    }
+
+    // Enhanced function to wait for all images to load with better detection
+    function waitForImagesToLoad(images) {
+      return new Promise((resolve) => {
+        let loadedCount = 0;
+        let errorCount = 0;
+        const totalImages = images.length;
+        
+        if (totalImages === 0) {
+          resolve();
+          return;
+        }
+        
+        const checkComplete = () => {
+          if (loadedCount + errorCount >= totalImages) {
+            log(`Images loaded: ${loadedCount}, failed: ${errorCount}, total: ${totalImages}`);
+            resolve();
+          }
+        };
+        
+        // Enhanced image loading detection
+        const processImage = (img, index) => {
+          // Force reload if image src was just changed
+          if (img.src && !img.complete) {
+            const tempSrc = img.src;
+            img.src = '';
+            img.src = tempSrc;
+          }
+          
+          const onLoad = () => {
+            loadedCount++;
+            log(`Image ${index + 1}/${totalImages} loaded: ${img.src}`);
+            img.removeEventListener('load', onLoad);
+            img.removeEventListener('error', onError);
+            checkComplete();
+          };
+          
+          const onError = () => {
+            errorCount++;
+            log(`Image ${index + 1}/${totalImages} failed to load: ${img.src}`, 'warn');
+            img.removeEventListener('load', onLoad);
+            img.removeEventListener('error', onError);
+            checkComplete();
+          };
+          
+          // Check if image is already loaded
+          if (img.complete && img.naturalWidth > 0) {
+            loadedCount++;
+            log(`Image ${index + 1}/${totalImages} already loaded: ${img.src}`);
+            checkComplete();
+          } else if (img.complete && img.naturalWidth === 0) {
+            errorCount++;
+            log(`Image ${index + 1}/${totalImages} failed (no natural width): ${img.src}`, 'warn');
+            checkComplete();
+          } else {
+            // Image not yet loaded - add event listeners
+            img.addEventListener('load', onLoad);
+            img.addEventListener('error', onError);
+            
+            // Force a reload if image seems stuck
+            setTimeout(() => {
+              if (!img.complete) {
+                log(`Force reloading stuck image: ${img.src}`, 'warn');
+                const tempSrc = img.src;
+                img.src = '';
+                setTimeout(() => { img.src = tempSrc; }, 10);
+              }
+            }, 5000);
+          }
+        };
+        
+        // Process all images with a small delay to avoid race conditions
+        images.forEach((img, index) => {
+          setTimeout(() => processImage(img, index), index * 10);
+        });
+        
+        // Extended timeout for large image sets
+        const timeout = Math.max(45000, totalImages * 100); // At least 45s, or 100ms per image
+        setTimeout(() => {
+          if (loadedCount + errorCount < totalImages) {
+            log(`Image loading timeout after ${timeout}ms - forcing completion. Loaded: ${loadedCount}, failed: ${errorCount}, total: ${totalImages}`, 'warn');
+            resolve();
+          }
+        }, timeout);
+      });
+    }
+
+    // New function to detect and wait for CSS background images
+    function waitForCSSBackgroundImages() {
+      return new Promise((resolve) => {
+        const elementsWithBgImages = [];
+        
+        // Find all elements with background images
+        const allElements = document.querySelectorAll('*');
+        allElements.forEach(element => {
+          const style = window.getComputedStyle(element);
+          const bgImage = style.backgroundImage;
+          
+          if (bgImage && bgImage !== 'none' && bgImage.includes('url(')) {
+            elementsWithBgImages.push({
+              element: element,
+              url: bgImage
+            });
+          }
+        });
+        
+        if (elementsWithBgImages.length === 0) {
+          log('No CSS background images found');
+          resolve();
+          return;
+        }
+        
+        log(`Found ${elementsWithBgImages.length} CSS background images`);
+        
+        let loadedBgImages = 0;
+        let failedBgImages = 0;
+        
+        const checkBgComplete = () => {
+          if (loadedBgImages + failedBgImages >= elementsWithBgImages.length) {
+            log(`CSS background images loaded: ${loadedBgImages}, failed: ${failedBgImages}`);
+            resolve();
+          }
+        };
+        
+        // Test each background image
+        elementsWithBgImages.forEach((bgImg, index) => {
+          const url = bgImg.url.replace(/^url\(['"]?/, '').replace(/['"]?\)$/, '');
+          
+          const testImg = new Image();
+          testImg.onload = () => {
+            loadedBgImages++;
+            log(`CSS background image ${index + 1} loaded: ${url}`);
+            checkBgComplete();
+          };
+          testImg.onerror = () => {
+            failedBgImages++;
+            log(`CSS background image ${index + 1} failed: ${url}`, 'warn');
+            checkBgComplete();
+          };
+          testImg.src = url;
+        });
+        
+        // Timeout for background images
+        setTimeout(() => {
+          if (loadedBgImages + failedBgImages < elementsWithBgImages.length) {
+            log(`CSS background image loading timeout - forcing completion`, 'warn');
+            resolve();
+          }
+        }, 20000);
+      });
+    }
+
+    // Enhanced function to wait for all content to be ready
+    async function waitForAllContentReady(allImages) {
+      log('Starting comprehensive content loading wait...');
+      
+      // Step 1: Wait for regular images
+      if (allImages.length > 0) {
+        log('Waiting for regular images to load...');
+        await waitForImagesToLoad(allImages);
+        log('Regular images loading complete');
+      }
+      
+      // Step 2: Wait for CSS background images
+      log('Waiting for CSS background images...');
+      await waitForCSSBackgroundImages();
+      log('CSS background images loading complete');
+      
+      // Step 3: Additional rendering time for browser
+      const renderingDelay = Math.max(5000, allImages.length * 10); // At least 5s, or 10ms per image
+      log(`Waiting additional ${renderingDelay}ms for browser rendering...`);
+      await new Promise(resolve => setTimeout(resolve, renderingDelay));
+      
+      // Step 4: Force a repaint
+      log('Forcing browser repaint...');
+      document.body.style.display = 'none';
+      document.body.offsetHeight; // Trigger reflow
+      document.body.style.display = '';
+      
+      log('All content loading and rendering complete');
+    }
+  </script>
+</body>
+</html> 

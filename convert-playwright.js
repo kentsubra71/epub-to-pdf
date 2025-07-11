@@ -265,8 +265,42 @@ async function comprehensivePDFFix(page, outputPath) {
   
   // 5. Wait for everything to stabilize
   await page.waitForTimeout(2000);
-  
-  // 6. Generate PDF
+
+  // 6. Replace body with #viewer content only for PDF export
+  await page.evaluate(() => {
+    const viewer = document.querySelector('#viewer');
+    if (!viewer) return;
+    // Clone the viewer node
+    const clone = viewer.cloneNode(true);
+    // Create a new container for PDF
+    const pdfContainer = document.createElement('div');
+    pdfContainer.id = 'pdf-container';
+    pdfContainer.style.cssText = `
+      width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto;
+      padding: 0;
+      background: white;
+      position: relative;
+      font-family: Arial, sans-serif;
+      box-sizing: border-box;
+    `;
+    // Move all children from clone to pdfContainer
+    while (clone.firstChild) {
+      pdfContainer.appendChild(clone.firstChild);
+    }
+    // Replace body content
+    document.body.innerHTML = '';
+    document.body.appendChild(pdfContainer);
+    document.body.style.cssText = 'margin: 0; padding: 0; background: white;';
+    // Remove scrollbars
+    document.documentElement.style.overflow = 'hidden';
+  });
+
+  // 7. Wait for layout to stabilize after DOM change
+  await page.waitForTimeout(1000);
+
+  // 8. Generate PDF
   const pdf = await page.pdf({
     format: 'Letter',
     printBackground: true,
@@ -274,7 +308,7 @@ async function comprehensivePDFFix(page, outputPath) {
     margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
     preferCSSPageSize: false
   });
-  
+
   return pdf;
 }
 

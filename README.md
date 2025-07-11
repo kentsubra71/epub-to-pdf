@@ -1,6 +1,6 @@
 # EPUB to PDF Converter
 
-A modern web-based EPUB to PDF converter using Thorium/Readium rendering engine with multiple PDF generation options.
+This project now uses **Playwright** exclusively for generating PDFs from EPUB files via a Thorium-style web viewer. All previous support for Puppeteer and wkhtmltopdf has been removed.
 
 ## Features
 - **Thorium-style EPUB viewer** with Readium Navigator for maximum compatibility
