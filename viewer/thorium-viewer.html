@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Thorium-Style EPUB Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script type="module">
+    import { Navigator } from '/node_modules/@readium/navigator/dist/index.js';
+    import { Publication } from '/node_modules/@readium/shared/dist/index.js';
+    
+    window.Navigator = Navigator;
+    window.Publication = Publication;
+  </script>
+  <style>
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      background: white;
+    }
+    
+    /* Frontend Interface Styles */
+    .interface {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .interface h1 {
+      margin: 0 0 20px 0;
+      font-size: 28px;
+      font-weight: 300;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+    }
+    
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: -9999px;
+      opacity: 0;
+      width: 0.1px;
+      height: 0.1px;
+    }
+    
+    .file-input-label {
+      background: rgba(255,255,255,0.2);
+      border: 2px dashed rgba(255,255,255,0.5);
+      padding: 15px 25px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-block;
+    }
+    
+    .file-input-label:hover {
+      background: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.8);
+    }
+    
+    .btn {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+    
+    .btn:hover {
+      background: #45a049;
+      transform: translateY(-1px);
+    }
+    
+    .btn:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .btn-export {
+      background: #ff6b6b;
+    }
+    
+    .btn-export:hover {
+      background: #ff5252;
+    }
+    
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .status.success {
+      background: rgba(76, 175, 80, 0.2);
+      border: 1px solid rgba(76, 175, 80, 0.5);
+    }
+    
+    .status.error {
+      background: rgba(244, 67, 54, 0.2);
+      border: 1px solid rgba(244, 67, 54, 0.5);
+    }
+    
+    .status.info {
+      background: rgba(33, 150, 243, 0.2);
+      border: 1px solid rgba(33, 150, 243, 0.5);
+    }
+    
+    /* Letter size indicator */
+    .letter-size-indicator {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(76, 175, 80, 0.9);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 1001;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    /* Letter-sized viewport for PDF conversion */
+    #viewer { 
+      width: 8.5in; /* Letter width */
+      height: 11in; /* Letter height */
+      max-width: 8.5in;
+      max-height: 11in;
+      border: 1px solid #ddd;
+      margin: 0;
+      position: relative;
+      background: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      overflow-y: auto;
+      overflow-x: hidden;
+      flex-shrink: 0;
+    }
+    
+    /* Navigation controls */
+    .nav-controls {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 50px;
+      height: 80px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+    
+    .nav-controls:hover {
+      background: rgba(0,0,0,0.9);
+      transform: translateY(-50%) scale(1.1);
+    }
+    
+    .nav-prev {
+      left: -80px;
+    }
+    
+    .nav-next {
+      right: -80px;
+    }
+    
+    /* Viewer container for navigation */
+    .viewer-container {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      width: 100%;
+      margin: 20px auto;
+      padding: 0 100px;
+    }
+    
+    /* Hide navigation for PDF mode */
+    .pdf-mode #viewer .readium-navigator-controls {
+      display: none !important;
+    }
+    
+    /* PDF mode: continuous pages */
+    .pdf-mode #viewer {
+      height: auto !important;
+      min-height: 11in;
+      overflow: visible !important;
+      width: 8.5in !important;
+      max-width: 8.5in !important;
+    }
+    
+    .pdf-mode .interface {
+      display: none;
+    }
+    
+    #debug { 
+      position: fixed; 
+      top: 10px; 
+      right: 10px; 
+      background: rgba(0,0,0,0.8); 
+      color: white; 
+      padding: 10px; 
+      font-family: monospace; 
+      font-size: 12px; 
+      max-width: 400px; 
+      max-height: 300px; 
+      overflow: auto; 
+      z-index: 1000;
+      border-radius: 4px;
+    }
+    
+    /* Readium-specific styles for better rendering */
+    .readium-navigator-content {
+      width: 100% !important;
+      height: auto !important;
+    }
+    
+    .readium-navigator-content iframe {
+      width: 100% !important;
+      height: auto !important;
+      border: none;
+    }
+    
+    /* Print styles - Letter size */
+    @media print {
+      @page {
+        size: letter;
+        margin: 0.75in;
+      }
+      
+      body { 
+        background: white; 
+        margin: 0;
+        padding: 0;
+      }
+      
+      #viewer { 
+        width: 8.5in !important; 
+        height: auto !important; 
+        min-height: 11in !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      
+      #debug, .interface { 
+        display: none !important; 
+      }
+      
+      .readium-navigator-controls { 
+        display: none !important; 
+      }
+      
+      .readium-navigator-content {
+        width: 8.5in !important;
+        padding: 0.75in !important;
+        box-sizing: border-box !important;
+      }
+      
+      .readium-section {
+        width: 7in !important;
+        min-height: 9.5in !important;
+        padding: 1rem 0 !important;
+        margin-bottom: 1rem !important;
+        page-break-after: always !important;
+      }
+      
+      img, table, figure, .caption {
+        page-break-inside: avoid;
+        max-width: 6.5in;
+        height: auto;
+      }
+      
+      h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+      }
+      
+      .page-break, [data-page-break] {
+        page-break-before: always;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Frontend Interface -->
+  <div class="interface" id="interface">
+    <h1>📚 Thorium-Style EPUB Viewer</h1>
+    <div class="controls">
+      <div class="file-input-wrapper">
+        <input type="file" id="epub-file" accept=".epub" />
+        <label for="epub-file" class="file-input-label">
+          📁 Choose EPUB File
+        </label>
+      </div>
+      <button id="export-pdf-btn" class="btn btn-export">
+        📄 Export to PDF
+      </button>
+      <button id="reload-epub-btn" class="btn">
+        🔄 Reload EPUB
+      </button>
+    </div>
+    <div id="status-container">
+      <div id="status-message">Ready - Using Thorium/Readium rendering engine</div>
+    </div>
+  </div>
+  
+  <div class="letter-size-indicator">📄 Letter Size: 8.5" × 11"</div>
+  
+  <div class="viewer-container">
+    <button class="nav-controls nav-prev" id="nav-prev">‹</button>
+    <div id="viewer"></div>
+    <button class="nav-controls nav-next" id="nav-next">›</button>
+  </div>
+  
+  <div id="debug"></div>
+  
+  <script type="module">
+    const debug = document.getElementById('debug');
+    const statusDiv = document.getElementById('status-message');
+    const exportBtn = document.getElementById('export-pdf-btn');
+    const reloadBtn = document.getElementById('reload-epub-btn');
+    const epubFileInput = document.getElementById('epub-file');
+    
+    let currentBookName = null;
+    let currentContentPath = null;
+    let readiumNavigator = null;
+    let currentSectionIndex = 0;
+    let totalSections = 0;
+    let sectionElements = [];
+    
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logEntry = document.createElement('div');
+      logEntry.style.color = type === 'error' ? '#ff6b6b' : type === 'warn' ? '#ffd93d' : '#6bcf7f';
+      logEntry.textContent = `[${timestamp}] ${message}`;
+      debug.appendChild(logEntry);
+      debug.scrollTop = debug.scrollHeight;
+      console.log(`[${type.toUpperCase()}] ${message}`);
+    }
+    
+    function showStatus(message, type = 'info') {
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+      statusDiv.style.display = 'block';
+      
+      if (type === 'success') {
+        setTimeout(() => {
+          statusDiv.style.display = 'none';
+        }, 5000);
+      }
+    }
+
+    log('Thorium-style viewer loaded with Readium Navigator');
+    
+    // Check URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const bookParam = urlParams.get('book');
+    const isPdfMode = urlParams.get('pdf') === 'true';
+    
+    if (isPdfMode) {
+      document.body.classList.add('pdf-mode');
+      log('PDF export mode enabled');
+      
+      // For PDF mode, show all sections
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          showAllSectionsForPdf();
+        }, 1000);
+      });
+    }
+    
+    if (bookParam) {
+      log(`Loading book from URL parameter: ${bookParam}`);
+      loadBookFromExtracted(bookParam);
+    }
+    
+    // File upload handler
+    epubFileInput.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      if (!file.name.toLowerCase().endsWith('.epub')) {
+        showStatus('Please select a valid EPUB file', 'error');
+        return;
+      }
+      
+      currentBookName = file.name;
+      showStatus('Uploading EPUB file...', 'info');
+      
+      try {
+        const formData = new FormData();
+        formData.append('epub', file);
+        
+        const response = await fetch('/upload-epub', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          log(`EPUB uploaded successfully. Book: ${result.bookName}`);
+          showStatus('EPUB processed! Loading with Readium...', 'success');
+          
+          await loadBookFromExtracted(result.bookName);
+          
+          exportBtn.disabled = false;
+          reloadBtn.disabled = false;
+        } else {
+          throw new Error(result.message || 'Processing failed.');
+        }
+        
+      } catch (error) {
+        log(`Upload error: ${error.message}`, 'error');
+        showStatus(`Upload failed: ${error.message}`, 'error');
+      }
+    });
+    
+    // Export button handler
+    exportBtn.addEventListener('click', async () => {
+      if (!currentBookName) {
+        showStatus('No EPUB loaded to export.', 'error');
+        return;
+      }
+      
+      showStatus('Starting PDF conversion...', 'info');
+      
+      try {
+        const response = await fetch('/convert-to-pdf', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ bookName: currentBookName }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server responded with ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.success && result.pdfs) {
+          showStatus(`Generated ${result.pdfs.length} PDFs successfully!`, 'success');
+          
+          // Add download links
+          result.pdfs.forEach(pdf => {
+            const link = document.createElement('a');
+            link.href = pdf.path;
+            link.target = '_blank';
+            link.textContent = `Download ${pdf.tool} PDF`;
+            link.style.marginRight = '10px';
+            statusDiv.appendChild(document.createElement('br'));
+            statusDiv.appendChild(link);
+          });
+        } else {
+          throw new Error(result.message || 'Unknown error during conversion.');
+        }
+      } catch (error) {
+        log(`PDF conversion error: ${error.message}`, 'error');
+        showStatus(`PDF generation failed: ${error.message}`, 'error');
+      }
+    });
+    
+    // Load book using Readium Navigator (like Thorium)
+    async function loadBookFromExtracted(bookName) {
+      try {
+        log(`Loading book with Readium Navigator: ${bookName}`);
+        showStatus('Initializing Readium Navigator...', 'info');
+        
+        // Create a basic publication manifest for the extracted EPUB
+        const cleanBookName = bookName.replace('.epub', '');
+        const manifestUrl = `/temp/${cleanBookName}/OEBPS/content.opf`;
+        
+        // Load the OPF file to create a publication
+        const opfResponse = await fetch(manifestUrl);
+        if (!opfResponse.ok) {
+          throw new Error(`Failed to load OPF: ${opfResponse.status}`);
+        }
+        
+        const opfText = await opfResponse.text();
+        log(`OPF loaded, length: ${opfText.length}`);
+        
+        // Parse OPF to create publication manifest
+        const parser = new DOMParser();
+        const opfDoc = parser.parseFromString(opfText, 'application/xml');
+        
+        // Extract metadata
+        const title = opfDoc.querySelector('title')?.textContent || 'Unknown Title';
+        const creator = opfDoc.querySelector('creator')?.textContent || 'Unknown Author';
+        
+        // Extract spine items
+        const spineItems = Array.from(opfDoc.querySelectorAll('spine itemref')).map(item => {
+          const idref = item.getAttribute('idref');
+          const manifestItem = opfDoc.querySelector(`manifest item[id="${idref}"]`);
+          return {
+            href: manifestItem?.getAttribute('href'),
+            mediaType: manifestItem?.getAttribute('media-type') || 'application/xhtml+xml'
+          };
+        }).filter(item => item.href);
+        
+        log(`Found ${spineItems.length} spine items`);
+        
+        // Create a simplified publication object
+        const publication = {
+          metadata: {
+            title: title,
+            author: creator,
+            identifier: cleanBookName
+          },
+          readingOrder: spineItems.map(item => ({
+            href: `/temp/${cleanBookName}/OEBPS/${item.href}`,
+            type: item.mediaType
+          })),
+          resources: [] // We'll let the navigator handle resources
+        };
+        
+        // Clear viewer and initialize Readium Navigator
+        const viewer = document.getElementById('viewer');
+        viewer.innerHTML = '';
+        
+        // Create a simple navigator-like interface
+        await renderWithReadiumStyle(publication, viewer);
+        
+        currentBookName = cleanBookName;
+        currentContentPath = `/temp/${cleanBookName}`;
+        
+        // Signal ready for PDF
+        window.readyForPdf = true;
+        
+        showStatus('EPUB loaded with Readium-style rendering!', 'success');
+        log('Book loaded successfully with Readium-style rendering');
+        
+      } catch (error) {
+        log(`Error loading book: ${error.message}`, 'error');
+        showStatus(`Failed to load EPUB: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+    
+    // Render content using Readium-style approach
+    async function renderWithReadiumStyle(publication, container) {
+      log('Rendering with Readium-style approach...');
+      
+      // Create main content container
+      const contentContainer = document.createElement('div');
+      contentContainer.className = 'readium-navigator-content';
+      contentContainer.style.cssText = `
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        background: white;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        padding: 0.75in;
+        box-sizing: border-box;
+      `;
+      
+      // Load and apply Readium CSS if available
+      try {
+        const readiumCssResponse = await fetch('/node_modules/@readium/css/dist/index.css');
+        if (readiumCssResponse.ok) {
+          const cssText = await readiumCssResponse.text();
+          const style = document.createElement('style');
+          style.textContent = cssText;
+          document.head.appendChild(style);
+          log('Readium CSS loaded');
+        }
+      } catch (e) {
+        log('Could not load Readium CSS, using fallback styles', 'warn');
+      }
+      
+      // Render each reading order item
+      for (let i = 0; i < publication.readingOrder.length; i++) {
+        const item = publication.readingOrder[i];
+        log(`Rendering item ${i + 1}/${publication.readingOrder.length}: ${item.href}`);
+        
+        try {
+          const response = await fetch(item.href);
+          if (!response.ok) {
+            log(`Failed to load ${item.href}: ${response.status}`, 'warn');
+            continue;
+          }
+          
+          const htmlContent = await response.text();
+          
+          // Create section container
+          const sectionDiv = document.createElement('div');
+          sectionDiv.className = 'readium-section';
+          sectionDiv.style.cssText = `
+            page-break-after: always;
+            margin-bottom: 1rem;
+            padding: 1rem 0;
+            background: white;
+            min-height: 9.5in;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-y: visible;
+          `;
+          
+          // Parse and inject content
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(htmlContent, 'text/html');
+          
+          // Load section-specific CSS
+          if (doc.head) {
+            const styleLinks = doc.head.querySelectorAll('link[rel="stylesheet"]');
+            for (const link of styleLinks) {
+              const href = link.getAttribute('href');
+              if (href && !href.startsWith('http')) {
+                const bookName = currentBookName || publication.metadata.identifier;
+                const cleanBookName = bookName.replace('.epub', '');
+                const cssUrl = `/temp/${cleanBookName}/OEBPS/${href}`;
+                const linkElement = document.createElement('link');
+                linkElement.rel = 'stylesheet';
+                linkElement.href = cssUrl;
+                document.head.appendChild(linkElement);
+                log(`Loaded CSS: ${cssUrl}`);
+              }
+            }
+          }
+          
+          // Extract and process body content
+          const bodyContent = doc.body ? doc.body.innerHTML : htmlContent;
+          sectionDiv.innerHTML = bodyContent;
+          
+          // Fix image paths
+          const images = sectionDiv.querySelectorAll('img');
+          images.forEach((img, imgIndex) => {
+            const originalSrc = img.getAttribute('src');
+            if (originalSrc && !originalSrc.startsWith('http')) {
+              const bookName = currentBookName || publication.metadata.identifier;
+              let newSrc;
+              
+              // Handle different image path patterns
+              // Remove .epub extension if present in bookName
+              const cleanBookName = bookName.replace('.epub', '');
+              
+              if (originalSrc.startsWith('../images/')) {
+                // Extract filename by replacing '../images/' with empty string
+                const filename = originalSrc.replace('../images/', '');
+                newSrc = `/temp/${cleanBookName}/OEBPS/images/${filename}`;
+              } else if (originalSrc.startsWith('../')) {
+                // Extract path by replacing '../' with empty string
+                const relativePath = originalSrc.replace('../', '');
+                newSrc = `/temp/${cleanBookName}/OEBPS/${relativePath}`;
+              } else if (originalSrc.startsWith('images/')) {
+                // Extract filename by replacing 'images/' with empty string
+                const filename = originalSrc.replace('images/', '');
+                newSrc = `/temp/${cleanBookName}/OEBPS/images/${filename}`;
+              } else if (originalSrc.includes('/')) {
+                newSrc = `/temp/${cleanBookName}/OEBPS/${originalSrc}`;
+              } else {
+                newSrc = `/temp/${cleanBookName}/OEBPS/images/${originalSrc}`;
+              }
+              
+              img.src = newSrc;
+              img.style.maxWidth = '100%';
+              img.style.height = 'auto';
+              
+              // Add error handling for missing images
+              img.onerror = function() {
+                log(`Image not found: ${newSrc}`, 'warn');
+                // Try alternative paths
+                const alternatives = [
+                  `/temp/${cleanBookName}/OEBPS/images/${originalSrc}`,
+                  `/temp/${cleanBookName}/OEBPS/xhtml/${originalSrc}`,
+                  `/temp/${cleanBookName}/OEBPS/${originalSrc}`
+                ];
+                
+                let altIndex = 0;
+                const tryNext = () => {
+                  if (altIndex < alternatives.length) {
+                    img.src = alternatives[altIndex];
+                    altIndex++;
+                  }
+                };
+                
+                img.onerror = tryNext;
+                tryNext();
+              };
+              
+              log(`Fixed image ${imgIndex + 1}: ${originalSrc} → ${newSrc}`);
+            }
+          });
+          
+          sectionElements.push(sectionDiv);
+          contentContainer.appendChild(sectionDiv);
+          
+        } catch (error) {
+          log(`Error rendering section ${item.href}: ${error.message}`, 'error');
+        }
+      }
+      
+      totalSections = sectionElements.length;
+      container.appendChild(contentContainer);
+      
+      // Initialize navigation
+      setupNavigation();
+      showSection(0);
+      
+      log('Readium-style rendering complete');
+    }
+    
+    // Navigation functions
+    function setupNavigation() {
+      const prevBtn = document.getElementById('nav-prev');
+      const nextBtn = document.getElementById('nav-next');
+      
+      prevBtn.addEventListener('click', () => {
+        if (currentSectionIndex > 0) {
+          showSection(currentSectionIndex - 1);
+        }
+      });
+      
+      nextBtn.addEventListener('click', () => {
+        if (currentSectionIndex < totalSections - 1) {
+          showSection(currentSectionIndex + 1);
+        }
+      });
+      
+      // Keyboard navigation
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (currentSectionIndex > 0) {
+            showSection(currentSectionIndex - 1);
+          }
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (currentSectionIndex < totalSections - 1) {
+            showSection(currentSectionIndex + 1);
+          }
+        }
+      });
+      
+      updateNavigationButtons();
+    }
+    
+    function showSection(index) {
+      if (index < 0 || index >= totalSections) return;
+      
+      // Hide all sections
+      sectionElements.forEach(section => {
+        section.style.display = 'none';
+      });
+      
+      // Show current section
+      if (sectionElements[index]) {
+        sectionElements[index].style.display = 'block';
+        currentSectionIndex = index;
+        updateNavigationButtons();
+        
+        // Scroll to top of viewer
+        const viewer = document.getElementById('viewer');
+        viewer.scrollTop = 0;
+        
+        log(`Showing section ${index + 1}/${totalSections}`);
+        showStatus(`Page ${index + 1} of ${totalSections}`, 'info');
+      }
+    }
+    
+    function updateNavigationButtons() {
+      const prevBtn = document.getElementById('nav-prev');
+      const nextBtn = document.getElementById('nav-next');
+      
+      if (prevBtn && nextBtn) {
+        prevBtn.style.opacity = currentSectionIndex > 0 ? '1' : '0.3';
+        nextBtn.style.opacity = currentSectionIndex < totalSections - 1 ? '1' : '0.3';
+        
+        prevBtn.disabled = currentSectionIndex === 0;
+        nextBtn.disabled = currentSectionIndex === totalSections - 1;
+      }
+    }
+    
+    function showAllSectionsForPdf() {
+      // Show all sections for PDF export
+      sectionElements.forEach(section => {
+        section.style.display = 'block';
+      });
+      
+      // Signal ready for PDF
+      window.readyForPdf = true;
+      log('All sections visible for PDF export');
+    }
+    
+    // Reload functionality
+    reloadBtn.addEventListener('click', () => {
+      if (currentBookName) {
+        currentSectionIndex = 0;
+        sectionElements = [];
+        totalSections = 0;
+        loadBookFromExtracted(currentBookName);
+      }
+    });
+    
+  </script>
+</body>
+</html> 
