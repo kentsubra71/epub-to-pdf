@@ -205,17 +205,36 @@
       display: none !important;
     }
     
-    /* PDF mode: continuous pages */
+    /* PDF mode: discrete pages */
     .pdf-mode #viewer {
       height: auto !important;
       min-height: 11in;
       overflow: visible !important;
       width: 8.5in !important;
       max-width: 8.5in !important;
+      margin: 0 !important;
+      padding: 0.75in !important;
+      box-sizing: border-box !important;
+      background: white !important;
     }
     
-    .pdf-mode .interface {
-      display: none;
+    .pdf-mode .interface,
+    .pdf-mode .nav-controls,
+    .pdf-mode #debug,
+    .pdf-mode .letter-size-indicator {
+      display: none !important;
+    }
+    
+    .pdf-mode .readium-section {
+      page-break-after: always !important;
+      min-height: 9.5in !important;
+      padding: 0.5in 0 !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
+    }
+    
+    .pdf-mode .readium-section:last-child {
+      page-break-after: avoid !important;
     }
     
     #debug { 
@@ -250,7 +269,7 @@
     @media print {
       @page {
         size: letter;
-        margin: 0.75in;
+        margin: 0.5in;
       }
       
       body { 
@@ -260,34 +279,39 @@
       }
       
       #viewer { 
-        width: 8.5in !important; 
+        width: 7.5in !important; 
         height: auto !important; 
-        min-height: 11in !important;
+        min-height: 10in !important;
         margin: 0 !important;
+        padding: 0 !important;
         border: none !important;
         box-shadow: none !important;
       }
       
-      #debug, .interface { 
+      .interface,
+      .nav-controls,
+      #debug,
+      .letter-size-indicator { 
         display: none !important; 
       }
       
-      .readium-navigator-controls { 
-        display: none !important; 
-      }
-      
-      .readium-navigator-content {
-        width: 8.5in !important;
-        padding: 0.75in !important;
-        box-sizing: border-box !important;
+      .readium-content-container {
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
       }
       
       .readium-section {
-        width: 7in !important;
-        min-height: 9.5in !important;
-        padding: 1rem 0 !important;
-        margin-bottom: 1rem !important;
+        width: 7.5in !important;
+        min-height: 10in !important;
+        padding: 0.5in !important;
+        margin: 0 !important;
         page-break-after: always !important;
+        box-sizing: border-box !important;
+      }
+      
+      .readium-section:last-child {
+        page-break-after: avoid !important;
       }
       
       img, table, figure, .caption {
@@ -431,7 +455,8 @@
           log(`EPUB uploaded successfully. Book: ${result.bookName}`);
           showStatus('EPUB processed! Loading with Readium...', 'success');
           
-          await loadBookFromExtracted(result.bookName);
+          currentBookName = result.bookName;
+          await loadBookFromExtracted(currentBookName);
           
           exportBtn.disabled = false;
           reloadBtn.disabled = false;

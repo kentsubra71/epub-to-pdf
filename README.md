@@ -1,197 +1,153 @@
 # EPUB to PDF Converter
 
-A Java application that converts reflowable EPUB files to PDF using Apache PDFBox.
+A modern web-based EPUB to PDF converter using Thorium/Readium rendering engine with multiple PDF generation options.
 
 ## Features
+- **Thorium-style EPUB viewer** with Readium Navigator for maximum compatibility
+- **Web interface** with drag-and-drop file upload
+- **Multiple PDF converters**: Puppeteer (Chromium) and Playwright
+- **Letter-size output** (8.5" × 11") with proper margins
+- **Full image support** with automatic path resolution
+- **Navigation controls** with section-by-section viewing
+- **Real-time status updates** and progress tracking
+- **Browser-accurate rendering** preserving all CSS, images, and fonts
 
-- ✅ Converts reflowable EPUB files to PDF format
-- ✅ Preserves book structure with title page and chapters
-- ✅ Handles text wrapping and page breaks automatically
-- ✅ Dockerized for easy deployment
-- ✅ Command-line interface
-- ✅ Proper error handling and logging
+## Quick Start
 
-## Requirements
+### Web Interface (Recommended)
 
-### With Docker (Recommended)
-- Docker
-- Docker Compose
-
-### Without Docker
-- Java 11 or higher
-- Maven 3.6 or higher
-
-## Quick Start with Docker
-
-1. **Build the Docker image:**
+1. **Install dependencies:**
    ```bash
-   docker build -t epub-to-pdf-converter .
+   npm install
    ```
 
-2. **Place your EPUB file in the `input` directory:**
+2. **Start the server:**
    ```bash
-   # Create input directory if it doesn't exist
-   mkdir -p input
+   node server.js
+   ```
+
+3. **Open your browser:**
+   - Go to `http://localhost:3000`
+   - Upload an EPUB file using the web interface
+   - View the rendered content in the Thorium-style viewer
+   - Click "Export to PDF" to generate PDF
+
+### Command Line
+
+1. **Place EPUB in input directory:**
+   ```bash
    cp your-book.epub input/
    ```
 
-3. **Convert EPUB to PDF:**
+2. **Convert to PDF:**
    ```bash
-   docker run --rm \
-     -v $(pwd)/input:/app/input \
-     -v $(pwd)/output:/app/output \
-     epub-to-pdf-converter input/your-book.epub output/your-book.pdf
+   npm run convert -- input/your-book.epub output/your-book.pdf
    ```
 
-### Using Docker Compose
+## System Architecture
 
-1. **Convert with Docker Compose:**
-   ```bash
-   docker-compose run --rm epub-to-pdf-converter input/your-book.epub output/your-book.pdf
-   ```
+### Core Components
+- **`server.js`** - Express server handling uploads, extraction, and PDF conversion
+- **`viewer/thorium-viewer.html`** - Thorium-style EPUB viewer with Readium components
+- **Multiple PDF converters** - Puppeteer, Playwright for different output options
 
-2. **For development:**
-   ```bash
-   docker-compose --profile dev up -d epub-to-pdf-dev
-   ```
-
-## Manual Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone <repository-url>
-   cd epub-to-pdf
-   ```
-
-2. **Build the project:**
-   ```bash
-   mvn clean package
-   ```
-
-3. **Run the application:**
-   ```bash
-   java -jar target/epub-to-pdf-converter-1.0.0.jar input.epub output.pdf
-   ```
-
-## Usage
-
-### Command Line
-```bash
-java -jar epub-to-pdf-converter.jar <input.epub> <output.pdf>
-```
-
-### Docker
-```bash
-docker run --rm \
-  -v /path/to/input:/app/input \
-  -v /path/to/output:/app/output \
-  epub-to-pdf-converter input/book.epub output/book.pdf
-```
-
-### Arguments
-- `<input.epub>`: Path to the input EPUB file
-- `<output.pdf>`: Path where the PDF should be saved
-
-### Options
-- `--help`, `-h`: Show help message
-
-## Examples
-
-### Basic conversion
-```bash
-java -jar epub-to-pdf-converter.jar book.epub book.pdf
-```
-
-### With full paths
-```bash
-java -jar epub-to-pdf-converter.jar /path/to/book.epub /path/to/output.pdf
-```
-
-### Docker example
-```bash
-docker run --rm \
-  -v $(pwd)/books:/app/input \
-  -v $(pwd)/pdfs:/app/output \
-  epub-to-pdf-converter input/novel.epub output/novel.pdf
-```
-
-## Project Structure
-
+### Directory Structure
 ```
 epub-to-pdf/
-├── src/main/java/com/epubtopdf/
-│   ├── EpubToPdfConverter.java    # Main application class
-│   ├── EpubReader.java            # EPUB parsing logic
-│   └── PdfCreator.java            # PDF generation logic
-├── input/                         # Input EPUB files
-├── output/                        # Output PDF files
-├── Dockerfile                     # Docker configuration
-├── docker-compose.yml             # Docker Compose configuration
-├── pom.xml                        # Maven dependencies
-└── README.md                      # This file
+├── server.js                 # Main Express server
+├── package.json              # Node.js dependencies
+├── viewer/
+│   ├── thorium-viewer.html   # Main Thorium-style viewer
+│   └── index.html            # Legacy epub.js viewer
+├── input/                    # Uploaded EPUB files
+├── output/                   # Generated PDF files
+├── temp/                     # Temporary extraction directory
+│   ├── uploads/              # Temporary upload storage
+│   └── [book-name]/          # Extracted EPUB content
+│       ├── META-INF/         # EPUB container metadata
+│       └── OEBPS/            # EPUB content
+│           ├── xhtml/        # XHTML content files
+│           ├── images/       # Image assets
+│           ├── css/          # Stylesheets
+│           ├── fonts/        # Font files
+│           └── js/           # JavaScript files
+└── java-legacy/              # Archived Java version (not used)
 ```
 
-## Dependencies
+### System Flow
+1. **Upload**: EPUB file → `temp/uploads/` → `input/`
+2. **Extract**: EPUB archive → `temp/[book-name]/` (full structure)
+3. **Serve**: Static files from extracted content for viewer access
+4. **View**: Thorium-style viewer renders extracted content
+5. **Convert**: PDF generation to `output/` directory
 
-- **Apache PDFBox 2.0.29**: PDF creation and manipulation
-- **epublib-core 3.1**: EPUB file parsing
-- **JSoup 1.15.3**: HTML parsing and text extraction
-- **Apache Commons Lang 3.12.0**: Utility functions
-- **SLF4J 1.7.36**: Logging framework
+## Key Dependencies
+- **@readium/navigator** - Thorium reading engine
+- **@readium/css** - Readium CSS handling
+- **@readium/shared** - Shared Readium components
+- **puppeteer** - PDF generation via Chromium
+- **playwright** - Alternative PDF generation
+- **express** - Web server
+- **multer** - File upload handling
+- **admzip** - EPUB extraction
+- **fs-extra** - Enhanced file system operations
 
-## Supported EPUB Features
+## API Endpoints
 
-- ✅ Basic text content
-- ✅ Chapter structure
-- ✅ Book metadata (title, author)
-- ✅ HTML text extraction
-- ✅ Paragraph breaks
-- ⚠️ Limited formatting (basic text only)
-- ❌ Images (not supported yet)
-- ❌ Complex styling (CSS)
-- ❌ Interactive elements
+### Upload EPUB
+```
+POST /upload-epub
+Content-Type: multipart/form-data
+Body: epub file
+```
 
-## Limitations
+### Convert to PDF
+```
+POST /convert-to-pdf
+Content-Type: application/json
+Body: { "bookName": "book-name" }
+```
 
-- Only supports reflowable EPUB files
-- Images are not converted
-- Complex CSS styling is not preserved
-- Fixed-layout EPUBs are not supported
-- Only basic text formatting is maintained
+### Download PDF
+```
+GET /download-pdf/:filename
+```
 
 ## Troubleshooting
 
-### Common Issues
+### Port Already in Use (Windows)
+```powershell
+# Find process using port 3000
+netstat -ano | findstr :3000
 
-1. **"Input file does not exist"**
-   - Check that the file path is correct
-   - Ensure the file has `.epub` extension
+# Kill the process (replace PID with actual process ID)
+taskkill /PID [PID] /F
 
-2. **"No readable content found"**
-   - The EPUB file might be corrupted
-   - Try with a different EPUB file
-
-3. **Docker permission issues**
-   - Make sure the input/output directories are readable/writable
-   - Check file permissions
-
-### Logging
-
-The application uses SLF4J for logging. To enable debug logging:
-
-```bash
-java -Dorg.slf4j.simpleLogger.defaultLogLevel=DEBUG \
-  -jar epub-to-pdf-converter.jar input.epub output.pdf
+# Start server
+node server.js
 ```
 
-## Contributing
+### PowerShell Command Chaining
+On Windows, use PowerShell syntax with semicolons:
+```powershell
+taskkill /PID [PID] /F; cd "D:\path\to\project"; node server.js
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## Docker Support
 
-## License
+1. **Build the image:**
+   ```bash
+   docker build -t epub-to-pdf .
+   ```
 
-This project is licensed under the MIT License. 
+2. **Run the container:**
+   ```bash
+   docker run --rm -v $(pwd)/input:/app/input -v $(pwd)/output:/app/output epub-to-pdf
+   ```
+
+## Notes
+- **Letter-size output** (8.5" × 11") with 0.75" margins
+- **Image loading fix** uses `replace()` instead of `substring()` for proper filename extraction
+- **Thorium/Readium compatibility** ensures maximum EPUB support
+- **Multiple PDF options** for different quality/size requirements
+- **Real-time viewer** with navigation controls and section management 

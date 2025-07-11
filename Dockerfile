@@ -1,45 +1,32 @@
-FROM maven:3.8.4-openjdk-11-slim AS build
+FROM node:20-slim
 
-WORKDIR /app
-
-# Copy pom.xml first for better Docker layer caching
-COPY pom.xml .
-
-# Download dependencies
-RUN mvn dependency:go-offline -B
-
-# Copy source code
-COPY src ./src
-
-# Build the application
-RUN mvn clean package -DskipTests
-
-# Runtime stage
-FROM openjdk:11-jre-slim
-
-# Install necessary packages for text rendering and fonts
+# Install Chromium dependencies
 RUN apt-get update && apt-get install -y \
-    fontconfig \
-    fonts-dejavu-core \
-    fonts-dejavu-extra \
-    && rm -rf /var/lib/apt/lists/*
+    chromium \
+    fonts-liberation \
+    libappindicator3-1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libgdk-pixbuf2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    xdg-utils \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY package.json ./
+RUN npm install
+COPY . .
 
-# Copy the built JAR from the build stage
-COPY --from=build /app/target/epub-to-pdf-converter-1.0.0.jar app.jar
+# Puppeteer expects Chromium at this path
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Create directories for input and output
-RUN mkdir -p /app/input /app/output
-
-# Set proper permissions
-RUN chmod 755 /app/input /app/output
-
-# Expose volume mounts
-VOLUME ["/app/input", "/app/output"]
-
-# Set the entry point
-ENTRYPOINT ["java", "-jar", "app.jar"]
-
-# Default command (can be overridden)
-CMD ["--help"] 
+CMD ["npm", "run", "convert", "--", "input/NL27_Grade_K_Unit_3.epub", "output/NL27_Grade_K_Unit_3.pdf"] 
