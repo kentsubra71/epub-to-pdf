@@ -383,6 +383,30 @@
     let totalSections = 0;
     let sectionElements = [];
     
+    // Diagnostic: Print all CSS variables on :root and body after CSS is loaded
+    function printCssVariableDiagnostics() {
+      function getAllCssVars(element) {
+        const styles = getComputedStyle(element);
+        const vars = {};
+        for (let i = 0; i < styles.length; i++) {
+          const name = styles[i];
+          if (name.startsWith('--')) {
+            vars[name] = styles.getPropertyValue(name).trim();
+          }
+        }
+        return vars;
+      }
+      const rootVars = getAllCssVars(document.documentElement);
+      const bodyVars = getAllCssVars(document.body);
+      console.log('[CSS Diagnostics] :root variables:', rootVars);
+      console.log('[CSS Diagnostics] body variables:', bodyVars);
+      // Print specific variables of interest
+      console.log('[CSS Diagnostics] --clr-aside-bg (root):', rootVars['--clr-aside-bg']);
+      console.log('[CSS Diagnostics] --clr-senary (root):', rootVars['--clr-senary']);
+      console.log('[CSS Diagnostics] --clr-aside-bg (body):', bodyVars['--clr-aside-bg']);
+      console.log('[CSS Diagnostics] --clr-senary (body):', bodyVars['--clr-senary']);
+    }
+    
     function log(message, type = 'info') {
       const timestamp = new Date().toLocaleTimeString();
       const logEntry = document.createElement('div');
@@ -407,27 +431,38 @@
 
     log('Thorium-style viewer loaded with Readium Navigator');
     
-    // Check URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const bookParam = urlParams.get('book');
-    const isPdfMode = urlParams.get('pdf') === 'true';
-    
-    if (isPdfMode) {
-      document.body.classList.add('pdf-mode');
-      log('PDF export mode enabled');
+    // Initialize the viewer when the page loads
+    document.addEventListener('DOMContentLoaded', async function() {
+      console.log('[Thorium Viewer] DOMContentLoaded event fired');
       
-      // For PDF mode, show all sections
-      window.addEventListener('load', () => {
-        setTimeout(() => {
-          showAllSectionsForPdf();
-        }, 1000);
+      const urlParams = new URLSearchParams(window.location.search);
+      const bookName = urlParams.get('book');
+      const isPdfMode = urlParams.get('pdf') === 'true';
+      
+      console.log('[Thorium Viewer] URL params:', {
+        book: bookName,
+        pdf: isPdfMode,
+        fullUrl: window.location.href
       });
-    }
-    
-    if (bookParam) {
-      log(`Loading book from URL parameter: ${bookParam}`);
-      loadBookFromExtracted(bookParam);
-    }
+      
+      if (bookName) {
+        console.log('[Thorium Viewer] Startup: Book param found:', bookName);
+        try {
+          // Load complete EPUB CSS context FIRST (like Thorium Desktop)
+          console.log('[Thorium Viewer] Starting CSS loading process...');
+          await loadCompleteEpubCSS(bookName);
+          console.log('[Thorium Viewer] CSS loading completed, now loading EPUB content...');
+          // Then load the EPUB content
+          await loadEpub(bookName, isPdfMode);
+          console.log('[Thorium Viewer] EPUB loading completed');
+        } catch (error) {
+          console.error('[Thorium Viewer] Error during startup:', error);
+        }
+      } else {
+        console.warn('[Thorium Viewer] No bookName found in URL params!');
+        console.log('[Thorium Viewer] Available URL params:', Array.from(urlParams.entries()));
+      }
+    });
     
     // File upload handler
     epubFileInput.addEventListener('change', async (event) => {
@@ -527,6 +562,11 @@
         log(`Loading book with Readium Navigator: ${bookName}`);
         showStatus('Initializing Readium Navigator...', 'info');
         
+        // CRITICAL: Load complete EPUB CSS context FIRST (like Thorium Desktop)
+        console.log('[Thorium Viewer] loadBookFromExtracted: Loading CSS context first...');
+        await loadCompleteEpubCSS(bookName);
+        console.log('[Thorium Viewer] loadBookFromExtracted: CSS context loaded, now loading content...');
+        
         // Create a basic publication manifest for the extracted EPUB
         const cleanBookName = bookName.replace('.epub', '');
         const manifestUrl = `/temp/${cleanBookName}/OEBPS/content.opf`;
@@ -590,6 +630,12 @@
         showStatus('EPUB loaded with Readium-style rendering!', 'success');
         log('Book loaded successfully with Readium-style rendering');
         
+        // After book is fully loaded and rendered, print diagnostics
+        afterBookLoaded();
+        
+        // Apply CSS variable overrides to ensure correct styling
+        applyCssVariableOverrides();
+        
       } catch (error) {
         log(`Error loading book: ${error.message}`, 'error');
         showStatus(`Failed to load EPUB: ${error.message}`, 'error');
@@ -609,7 +655,6 @@
         height: 100%;
         overflow: visible;
         background: white;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
         line-height: 1.6;
         color: #333;
         padding: ${document.body.classList.contains('pdf-mode') ? '0' : '0.75in'};
@@ -672,21 +717,9 @@
                 const cleanBookName = bookName.replace('.epub', '');
                 const cssUrl = `/temp/${cleanBookName}/OEBPS/${href}`;
                 
-                // Fetch the CSS and inject as <style> tag instead of <link>
-                try {
-                  const cssResponse = await fetch(cssUrl);
-                  if (cssResponse.ok) {
-                    const cssText = await cssResponse.text();
-                    const styleTag = document.createElement('style');
-                    styleTag.textContent = cssText;
-                    document.head.appendChild(styleTag);
-                    log(`Inlined CSS: ${cssUrl}`);
-                  } else {
-                    log(`Failed to load CSS: ${cssUrl} (${cssResponse.status})`, 'error');
-                  }
-                } catch (e) {
-                  log(`Failed to inline CSS from ${cssUrl}: ${e.message}`, 'error');
-                }
+                // CSS is already loaded upfront, so we don't need to load it again
+                // Just ensure the link is properly resolved
+                console.log(`[Thorium Viewer] CSS already loaded: ${href}`);
               }
             }
           }
@@ -771,6 +804,18 @@
       showSection(0);
       
       log('Readium-style rendering complete');
+      
+      // Apply CSS variable overrides after content is rendered
+      applyCssVariableOverrides();
+      
+      // Remove all inline font-size and font-family styles after content is rendered
+      setTimeout(() => {
+        document.querySelectorAll('[style*="font-size"], [style*="font-family"]').forEach(el => {
+          el.style.setProperty('font-size', '13px', 'important');
+          el.style.setProperty('font-family', 'proximanova-regular, sans-serif', 'important');
+        });
+        console.log('[Thorium Viewer] Removed inline font-size and font-family styles');
+      }, 0);
     }
     
     // Navigation functions
@@ -864,6 +909,294 @@
         loadBookFromExtracted(currentBookName);
       }
     });
+    
+    // Helper to rewrite url(...) in CSS to correct /temp/{bookName}/OEBPS/ path
+    function rewriteCSSUrls(cssText, bookName) {
+      // Rewrite relative URLs and absolute /fonts/ or /images/ URLs
+      const urlRegex = /url\((['"]?)(?!https?:|data:)([^'"\)]+)\1\)/g;
+      let rewriteCount = 0;
+      const rewritten = cssText.replace(urlRegex, (match, quote, relPath) => {
+        let fixedPath = relPath.trim();
+        // If already absolute and starts with /fonts/ or /images/, remove leading /
+        if (fixedPath.startsWith('/fonts/') || fixedPath.startsWith('/images/')) {
+          fixedPath = fixedPath.substring(1);
+        }
+        // If the path starts with ../, remove it
+        if (fixedPath.startsWith('../')) {
+          fixedPath = fixedPath.substring(3);
+        }
+        // If the path starts with ./, remove it
+        if (fixedPath.startsWith('./')) {
+          fixedPath = fixedPath.substring(2);
+        }
+        // Compose the new URL
+        const newUrl = `/temp/${bookName}/OEBPS/${fixedPath}`;
+        rewriteCount++;
+        console.log(`[CSS Rewrite] ${relPath} => ${newUrl}`);
+        return `url(${quote}${newUrl}${quote})`;
+      });
+      if (rewriteCount > 0) {
+        console.log(`[CSS Rewrite] Rewrote ${rewriteCount} url(...) references in CSS.`);
+      }
+      return rewritten;
+    }
+    
+    // Load ALL CSS files from OPF manifest to ensure complete context (like Thorium Desktop)
+    async function loadCompleteEpubCSS(bookName) {
+      console.log('[Thorium Viewer] Loading complete EPUB CSS context for book:', bookName);
+      
+      try {
+        // Parse the OPF manifest to get all CSS files
+        const opfUrl = `/temp/${bookName}/OEBPS/content.opf`;
+        console.log('[Thorium Viewer] Fetching OPF manifest from:', opfUrl);
+        
+        const opfResponse = await fetch(opfUrl);
+        if (!opfResponse.ok) {
+          throw new Error(`Failed to fetch OPF: ${opfResponse.status} ${opfResponse.statusText}`);
+        }
+        
+        const opfText = await opfResponse.text();
+        console.log('[Thorium Viewer] OPF content length:', opfText.length);
+        
+        const parser = new DOMParser();
+        const opfDoc = parser.parseFromString(opfText, 'text/xml');
+        
+        // Check for parsing errors
+        const parseError = opfDoc.querySelector('parsererror');
+        if (parseError) {
+          throw new Error('Failed to parse OPF XML: ' + parseError.textContent);
+        }
+        
+        // Extract all CSS files from manifest
+        const cssItems = opfDoc.querySelectorAll('item[media-type="text/css"]');
+        console.log('[Thorium Viewer] Raw CSS items found:', cssItems.length);
+        
+        const cssFiles = Array.from(cssItems).map(item => {
+          const href = item.getAttribute('href');
+          const id = item.getAttribute('id');
+          console.log(`[Thorium Viewer] CSS item: id="${id}", href="${href}"`);
+          return href;
+        }).filter(href => href); // Remove any null/undefined hrefs
+        
+        console.log(`[Thorium Viewer] Found ${cssFiles.length} CSS files in OPF manifest:`, cssFiles);
+        
+        if (cssFiles.length === 0) {
+          console.warn('[Thorium Viewer] No CSS files found in OPF manifest!');
+          // Let's also check for any items to see what's in the manifest
+          const allItems = opfDoc.querySelectorAll('item');
+          console.log('[Thorium Viewer] All items in manifest:', Array.from(allItems).map(item => ({
+            id: item.getAttribute('id'),
+            href: item.getAttribute('href'),
+            mediaType: item.getAttribute('media-type')
+          })));
+        }
+        
+        // Load all CSS files in order (variables first, then core, then components)
+        const variableFiles = cssFiles.filter(href => href.includes('variable_'));
+        const coreFiles = cssFiles.filter(href => href.includes('core_'));
+        const componentFiles = cssFiles.filter(href => href.includes('component_'));
+        
+        console.log('[Thorium Viewer] CSS file categories:', {
+          variable: variableFiles,
+          core: coreFiles,
+          component: componentFiles
+        });
+        
+        // Load in order: variables first (they define CSS variables), then core, then components
+        const orderedFiles = [...variableFiles, ...coreFiles, ...componentFiles];
+        
+        console.log('[Thorium Viewer] Loading CSS files in order:', orderedFiles);
+        
+        for (const cssFile of orderedFiles) {
+          const cssUrl = `/temp/${bookName}/OEBPS/${cssFile}`;
+          console.log(`[Thorium Viewer] Fetching CSS: ${cssUrl}`);
+          try {
+            const cssResponse = await fetch(cssUrl);
+            console.log(`[Thorium Viewer] CSS response status: ${cssResponse.status} for ${cssFile}`);
+            
+            if (cssResponse.ok) {
+              let cssText = await cssResponse.text();
+              console.log(`[Thorium Viewer] CSS content length for ${cssFile}:`, cssText.length);
+              console.log(`[CSS Injection] Before rewrite (first 300):\n${cssText.slice(0, 300)}`);
+              cssText = rewriteCSSUrls(cssText, bookName);
+              // Remove all @import lines to prevent browser 404s
+              cssText = cssText.replace(/@import[^;]+;/g, '');
+              console.log(`[CSS Injection] After rewrite (first 300):\n${cssText.slice(0, 300)}`);
+              const styleTag = document.createElement('style');
+              styleTag.textContent = cssText;
+              document.head.appendChild(styleTag);
+              console.log(`[Thorium Viewer] Successfully loaded and injected CSS: ${cssFile}`);
+            } else {
+              console.error(`[Thorium Viewer] Failed to fetch CSS ${cssFile}: ${cssResponse.status} ${cssResponse.statusText}`);
+            }
+          } catch (error) {
+            console.error(`[Thorium Viewer] Error loading CSS ${cssFile}:`, error);
+          }
+        }
+        
+        console.log('[Thorium Viewer] Complete EPUB CSS context loading finished');
+        
+        // Set root font-size to match Thorium Desktop
+        const rootFontSizeStyle = document.createElement('style');
+        rootFontSizeStyle.textContent = `html { font-size: 10px !important; }`;
+        document.head.prepend(rootFontSizeStyle);
+        console.log('[Thorium Viewer] Set html root font-size to 10px to match Thorium Desktop');
+        
+      } catch (error) {
+        console.error('[Thorium Viewer] Failed to load complete EPUB CSS context:', error);
+      }
+      
+      // After loading all CSS, print diagnostics
+      console.log('[Thorium Viewer] Running CSS diagnostics after loading...');
+      printCssVariableDiagnostics();
+    }
+    
+    // Apply CSS variable overrides after content is rendered
+    function applyCssVariableOverrides() {
+      console.log('=== CSS OVERRIDE FUNCTION CALLED ===');
+      console.log('[Thorium Viewer] Applying CSS variable overrides...');
+      
+      // Debug: Check what CSS variables are available
+      const rootStyle = getComputedStyle(document.documentElement);
+      console.log('[Thorium Viewer] Available CSS variables:');
+      console.log('--defaultFont:', rootStyle.getPropertyValue('--defaultFont'));
+      console.log('--fs-p:', rootStyle.getPropertyValue('--fs-p'));
+      console.log('--clr-para-text:', rootStyle.getPropertyValue('--clr-para-text'));
+      
+      // Debug: Check current computed styles
+      const bodyStyle = getComputedStyle(document.body);
+      console.log('[Thorium Viewer] Current body computed styles:');
+      console.log('font-family:', bodyStyle.fontFamily);
+      console.log('font-size:', bodyStyle.fontSize);
+      console.log('font-size (px):', parseFloat(bodyStyle.fontSize));
+      
+      // Remove any existing override styles
+      const existingOverrides = document.querySelectorAll('style[data-css-override]');
+      existingOverrides.forEach(style => style.remove());
+      
+      // Add new override rules with more aggressive targeting
+      const overrideStyle = document.createElement('style');
+      overrideStyle.setAttribute('data-css-override', 'true');
+      overrideStyle.textContent = `
+        /* Force CSS variables to be applied with maximum specificity */
+        html, html * {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
+        }
+        
+        body, body * {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
+          font-size: var(--fs-p) !important;
+        }
+        
+        /* Target specific elements */
+        .readium-navigator-content,
+        .readium-navigator-content *,
+        .readium-section,
+        .readium-section * {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
+          font-size: var(--fs-p) !important;
+        }
+        
+        /* Override any inline styles */
+        [style*="font-family"] {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
+        }
+        
+        [style*="font-size"] {
+          font-size: var(--fs-p) !important;
+        }
+        
+        /* Force specific elements */
+        p, div, span, h1, h2, h3, h4, h5, h6, li, td, th, article, section {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
+          font-size: var(--fs-p) !important;
+        }
+        
+        /* If CSS variables are undefined, use fallback values */
+        html {
+          --defaultFont: "proximanova-regular" !important;
+          --fs-p: 1.625rem !important;
+        }
+        
+        /* Scale down font sizes for better PDF layout */
+        body, body * {
+          font-size: 13px !important;
+        }
+        
+        /* Scale down specific elements that have large font sizes */
+        h1, h2, h3, h4, h5, h6 {
+          font-size: 16px !important;
+        }
+        
+        /* Override any inline font-size declarations */
+        [style*="font-size"] {
+          font-size: 13px !important;
+        }
+        
+        /* Specific overrides for elements with !important inline styles */
+        div[style*="font-size: 40px"], div[style*="font-size: 30px"] {
+          font-size: 20px !important;
+        }
+        
+        div[style*="font-size: 15px"] {
+          font-size: 10px !important;
+        }
+      `;
+      document.head.appendChild(overrideStyle);
+      console.log('[Thorium Viewer] CSS variable override rules applied');
+      
+      // Force a reflow to ensure styles are applied
+      document.body.offsetHeight;
+      
+      // Log the computed styles to verify
+      setTimeout(() => {
+        const bodyElement = document.body;
+        const computedStyle = window.getComputedStyle(bodyElement);
+        console.log('[Thorium Viewer] Computed font-family after override:', computedStyle.fontFamily);
+        console.log('[Thorium Viewer] Computed font-size after override:', computedStyle.fontSize);
+        
+        // Check a few specific elements
+        const viewer = document.getElementById('viewer');
+        if (viewer) {
+          const viewerStyle = window.getComputedStyle(viewer);
+          console.log('[Thorium Viewer] Viewer font-family:', viewerStyle.fontFamily);
+          console.log('[Thorium Viewer] Viewer font-size:', viewerStyle.fontSize);
+        }
+        
+        // Check if there are any elements with inline styles
+        const elementsWithInlineStyles = document.querySelectorAll('[style*="font-family"], [style*="font-size"]');
+        console.log('[Thorium Viewer] Elements with inline font styles:', elementsWithInlineStyles.length);
+        elementsWithInlineStyles.forEach((el, index) => {
+          if (index < 5) { // Only log first 5
+            console.log(`[Thorium Viewer] Element ${index + 1}:`, el.tagName, el.style.cssText);
+          }
+        });
+      }, 100);
+    }
+    
+    // After book is fully loaded and rendered, print diagnostics
+    function afterBookLoaded() {
+      printCssVariableDiagnostics();
+    }
+    
+    async function loadEpub(bookName, isPdfMode) {
+      try {
+        if (isPdfMode) {
+          document.body.classList.add('pdf-mode');
+          log('PDF export mode enabled');
+          
+          // For PDF mode, show all sections
+          setTimeout(() => {
+            showAllSectionsForPdf();
+          }, 1000);
+        }
+        
+        log(`Loading book from extracted files: ${bookName}`);
+        await loadBookFromExtracted(bookName);
+      } catch (error) {
+        console.error('[Thorium Viewer] Failed to load EPUB:', error);
+      }
+    }
     
   </script>
 </body>
