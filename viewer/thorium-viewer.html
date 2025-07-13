@@ -808,14 +808,8 @@
       // Apply CSS variable overrides after content is rendered
       applyCssVariableOverrides();
       
-      // Remove all inline font-size and font-family styles after content is rendered
-      setTimeout(() => {
-        document.querySelectorAll('[style*="font-size"], [style*="font-family"]').forEach(el => {
-          el.style.setProperty('font-size', '13px', 'important');
-          el.style.setProperty('font-family', 'proximanova-regular, sans-serif', 'important');
-        });
-        console.log('[Thorium Viewer] Removed inline font-size and font-family styles');
-      }, 0);
+      // REMOVED: This was overriding ALL font-sizes to 13px, destroying the original 40px headings
+      // Instead, let the original inline font-sizes be preserved
     }
     
     // Navigation functions
@@ -1036,11 +1030,71 @@
         
         console.log('[Thorium Viewer] Complete EPUB CSS context loading finished');
         
-        // Set root font-size to match Thorium Desktop
+        // Set root font-size to match Thorium Desktop - but preserve centering
         const rootFontSizeStyle = document.createElement('style');
-        rootFontSizeStyle.textContent = `html { font-size: 10px !important; }`;
+        rootFontSizeStyle.textContent = `
+          html { font-size: 10px !important; }
+          
+          /* Preserve centering for title page elements */
+          div[style*="text-align: center"] {
+            text-align: center !important;
+          }
+          
+          /* PRESERVE original inline font-size declarations - don't override them */
+          /* The problem is they're being overridden to 13px somewhere else */
+          
+          /* Ensure centered headings maintain their alignment */
+          div[style*="font-size"][style*="text-align: center"] {
+            text-align: center !important;
+            display: block !important;
+            width: 100% !important;
+          }
+        `;
         document.head.prepend(rootFontSizeStyle);
-        console.log('[Thorium Viewer] Set html root font-size to 10px to match Thorium Desktop');
+        console.log('[Thorium Viewer] Set html root font-size to 10px to match Thorium Desktop with centering preservation');
+        
+        // AGGRESSIVE: Force font-size overrides via JavaScript DOM manipulation
+        setTimeout(() => {
+          console.log('[Thorium Viewer] Applying aggressive font-size overrides via DOM manipulation...');
+          
+          const fontSizeMap = {
+            '40px': '40px',  // PRESERVE original 40px
+            '30px': '30px',  // PRESERVE original 30px
+            '28px': '28px',  // PRESERVE original 28px
+            '26px': '26px',  // PRESERVE original 26px
+            '24px': '24px',  // PRESERVE original 24px
+            '15px': '15px'   // PRESERVE original 15px
+          };
+          
+          // Find all elements with inline font-size styles
+          const elementsWithFontSize = document.querySelectorAll('*[style*="font-size"]');
+          console.log(`[Thorium Viewer] Found ${elementsWithFontSize.length} elements with inline font-size`);
+          
+          elementsWithFontSize.forEach((element, index) => {
+            const currentStyle = element.getAttribute('style') || '';
+            console.log(`[Thorium Viewer] Element ${index + 1} original style: ${currentStyle}`);
+            
+            // Check each font size in our map
+            Object.keys(fontSizeMap).forEach(originalSize => {
+              const newSize = fontSizeMap[originalSize];
+              
+              // Check for both spaced and non-spaced versions
+              if (currentStyle.includes(`font-size: ${originalSize}`) || 
+                  currentStyle.includes(`font-size:${originalSize}`)) {
+                
+                console.log(`[Thorium Viewer] Overriding ${originalSize} → ${newSize} for element:`, element.textContent.substring(0, 50) + '...');
+                
+                // Force the new font-size using setProperty with important
+                element.style.setProperty('font-size', newSize, 'important');
+                
+                // Verify the change
+                const computedSize = window.getComputedStyle(element).fontSize;
+                console.log(`[Thorium Viewer] Computed font-size after override: ${computedSize}`);
+              }
+            });
+          });
+          
+        }, 500); // Run after CSS is loaded
         
       } catch (error) {
         console.error('[Thorium Viewer] Failed to load complete EPUB CSS context:', error);
@@ -1074,72 +1128,47 @@
       const existingOverrides = document.querySelectorAll('style[data-css-override]');
       existingOverrides.forEach(style => style.remove());
       
-      // Add new override rules with more aggressive targeting
+      // Add simplified override rules that work with our font-size fixes
       const overrideStyle = document.createElement('style');
       overrideStyle.setAttribute('data-css-override', 'true');
       overrideStyle.textContent = `
-        /* Force CSS variables to be applied with maximum specificity */
-        html, html * {
-          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
-        }
-        
-        body, body * {
-          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
-          font-size: var(--fs-p) !important;
-        }
-        
-        /* Target specific elements */
-        .readium-navigator-content,
-        .readium-navigator-content *,
-        .readium-section,
-        .readium-section * {
-          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
-          font-size: var(--fs-p) !important;
-        }
-        
-        /* Override any inline styles */
-        [style*="font-family"] {
-          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
-        }
-        
-        [style*="font-size"] {
-          font-size: var(--fs-p) !important;
-        }
-        
-        /* Force specific elements */
-        p, div, span, h1, h2, h3, h4, h5, h6, li, td, th, article, section {
-          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
-          font-size: var(--fs-p) !important;
-        }
-        
-        /* If CSS variables are undefined, use fallback values */
+        /* Force CSS variables to be applied */
         html {
           --defaultFont: "proximanova-regular" !important;
           --fs-p: 1.625rem !important;
         }
         
-        /* Scale down font sizes for better PDF layout */
+        /* Apply font-family consistently but don't override font-size */
         body, body * {
-          font-size: 13px !important;
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
         }
         
-        /* Scale down specific elements that have large font sizes */
-        h1, h2, h3, h4, h5, h6 {
-          font-size: 16px !important;
+        /* Target specific EPUB content areas */
+        .readium-navigator-content,
+        .readium-navigator-content *,
+        .readium-section,
+        .readium-section * {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
         }
         
-        /* Override any inline font-size declarations */
-        [style*="font-size"] {
-          font-size: 13px !important;
+        /* Override inline font-family but preserve font-size overrides */
+        [style*="font-family"] {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
         }
         
-        /* Specific overrides for elements with !important inline styles */
-        div[style*="font-size: 40px"], div[style*="font-size: 30px"] {
-          font-size: 20px !important;
+        /* Apply consistent font-family to all elements */
+        p, div, span, h1, h2, h3, h4, h5, h6, li, td, th, article, section {
+          font-family: var(--defaultFont), "proximanova-regular", sans-serif !important;
         }
         
-        div[style*="font-size: 15px"] {
-          font-size: 10px !important;
+        /* Only override body text size, not heading sizes */
+        body {
+          font-size: var(--fs-p) !important;
+        }
+        
+        /* Override small text elements */
+        figcaption, .caption, .small-text {
+          font-size: 10.4px !important;
         }
       `;
       document.head.appendChild(overrideStyle);

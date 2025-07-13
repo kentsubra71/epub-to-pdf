@@ -237,11 +237,146 @@ async function forceAllImagesToBase64(page) {
   console.log('Base64 conversion results:', results);
 }
 
+// Wait for all stylesheets and fonts to load
+async function waitForStylesAndFonts(page) {
+  await page.evaluate(async () => {
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    // Wait for all stylesheets to finish loading
+    const sheets = Array.from(document.styleSheets);
+    await Promise.all(sheets.map(sheet => {
+      if (sheet.href) {
+        return fetch(sheet.href).catch(() => {});
+      }
+    }));
+  });
+}
+
+// Diagnostic function for styles and fonts
+async function diagnoseStylesAndFonts(page) {
+  console.log('[Playwright] Running style diagnostics...');
+  const diagnostics = await page.evaluate(() => {
+    const results = {
+      stylesheets: [],
+      fonts: [],
+      cssVariables: {},
+      sampleElements: [],
+      fontFaces: []
+    };
+    Array.from(document.styleSheets).forEach((sheet, index) => {
+      try {
+        results.stylesheets.push({
+          index,
+          href: sheet.href || 'inline',
+          rules: sheet.cssRules ? sheet.cssRules.length : 0,
+          media: sheet.media ? sheet.media.mediaText : 'all'
+        });
+        if (sheet.cssRules) {
+          Array.from(sheet.cssRules).forEach(rule => {
+            if (rule instanceof CSSFontFaceRule) {
+              results.fontFaces.push({
+                family: rule.style.fontFamily,
+                src: rule.style.src,
+                weight: rule.style.fontWeight,
+                style: rule.style.fontStyle
+              });
+            }
+          });
+        }
+      } catch (e) {
+        results.stylesheets.push({
+          index,
+          href: sheet.href || 'inline',
+          error: 'Cannot access (cross-origin)'
+        });
+      }
+    });
+    if (document.fonts) {
+      document.fonts.forEach(font => {
+        results.fonts.push({
+          family: font.family,
+          weight: font.weight,
+          style: font.style,
+          status: font.status,
+          unicodeRange: font.unicodeRange
+        });
+      });
+    }
+    const rootStyle = getComputedStyle(document.documentElement);
+    const importantVars = [
+      '--body-margin-top',
+      '--body-margin-right',
+      '--body-margin-bottom',
+      '--body-margin-left',
+      '--body-font-family',
+      '--heading-font-family'
+    ];
+    importantVars.forEach(varName => {
+      results.cssVariables[varName] = rootStyle.getPropertyValue(varName) || 'not set';
+    });
+    const viewer = document.querySelector('#viewer');
+    if (viewer) {
+      const firstP = viewer.querySelector('p');
+      if (firstP) {
+        const pStyle = getComputedStyle(firstP);
+        results.sampleElements.push({
+          selector: 'first <p>',
+          fontFamily: pStyle.fontFamily,
+          fontSize: pStyle.fontSize,
+          color: pStyle.color,
+          backgroundColor: pStyle.backgroundColor,
+          margin: pStyle.margin
+        });
+      }
+      const firstHeading = viewer.querySelector('h1, h2, h3');
+      if (firstHeading) {
+        const hStyle = getComputedStyle(firstHeading);
+        results.sampleElements.push({
+          selector: `first <${firstHeading.tagName.toLowerCase()}>`,
+          fontFamily: hStyle.fontFamily,
+          fontSize: hStyle.fontSize,
+          fontWeight: hStyle.fontWeight,
+          color: hStyle.color
+        });
+      }
+      const bgSection = viewer.querySelector('[style*="background"], .has-background');
+      if (bgSection) {
+        const bgStyle = getComputedStyle(bgSection);
+        results.sampleElements.push({
+          selector: 'section with background',
+          backgroundColor: bgStyle.backgroundColor,
+          className: bgSection.className
+        });
+      }
+    }
+    return results;
+  });
+  console.log('[Playwright] Style Diagnostics:');
+  console.log('Stylesheets:', JSON.stringify(diagnostics.stylesheets, null, 2));
+  console.log('Fonts:', JSON.stringify(diagnostics.fonts, null, 2));
+  console.log('Font-face rules found:', JSON.stringify(diagnostics.fontFaces, null, 2));
+  console.log('CSS Variables:', JSON.stringify(diagnostics.cssVariables, null, 2));
+  console.log('Sample Elements:', JSON.stringify(diagnostics.sampleElements, null, 2));
+  return diagnostics;
+}
+
 // MAIN SOLUTION: Comprehensive fix
 async function comprehensivePDFFix(page, outputPath) {
   // 1. First analyze what's wrong
   const analysis = await analyzeImagePatterns(page);
   console.log(`Found ${analysis.missingCount} missing images out of ${analysis.totalImages}`);
+  
+  // 1a. Check if EPUB content is actually loaded
+  const epubLoaded = await page.evaluate(() => {
+    const viewer = document.querySelector('#viewer');
+    return viewer && viewer.innerHTML.trim().length > 0;
+  });
+  
+  if (!epubLoaded) {
+    console.log('[Playwright] EPUB content not loaded, waiting longer...');
+    await page.waitForTimeout(5000);
+  }
   
   // 2. Apply targeted fixes
   await fixSpecificImageTypes(page);
@@ -270,31 +405,154 @@ async function comprehensivePDFFix(page, outputPath) {
   await page.evaluate(() => {
     const viewer = document.querySelector('#viewer');
     if (!viewer) return;
-    // Clone the viewer node
+    
+    // DIAGNOSTIC: Analyze font sizes before PDF generation
+    console.log('=== FONT SIZE ANALYSIS BEFORE PDF GENERATION ===');
+    
+    // Check root font size
+    const rootFontSize = window.getComputedStyle(document.documentElement).fontSize;
+    console.log('Root font-size:', rootFontSize);
+    
+    // Check CSS variables
+    const rootStyle = window.getComputedStyle(document.documentElement);
+    console.log('CSS Variables:');
+    console.log('  --fs-h1:', rootStyle.getPropertyValue('--fs-h1'));
+    console.log('  --fs-h2:', rootStyle.getPropertyValue('--fs-h2'));
+    console.log('  --fs-h3:', rootStyle.getPropertyValue('--fs-h3'));
+    console.log('  --fs-p:', rootStyle.getPropertyValue('--fs-p'));
+    
+    // Check specific heading elements
+    const headings = viewer.querySelectorAll('h1, h2, h3, div[style*="font-size"]');
+    console.log('Heading elements found:', headings.length);
+    headings.forEach((heading, index) => {
+      const computed = window.getComputedStyle(heading);
+      console.log(`Heading ${index + 1} (${heading.tagName}):`, {
+        fontSize: computed.fontSize,
+        fontFamily: computed.fontFamily,
+        textContent: heading.textContent.substring(0, 50) + '...'
+      });
+    });
+    
+    // Remove navigation artifacts before cloning
+    const artifactsToRemove = viewer.querySelectorAll('[class*="navigation"], [class*="page"], [class*="toc"], [id*="navigation"], [id*="page"], [id*="toc"]');
+    artifactsToRemove.forEach(el => el.remove());
+    
+    // Clone the viewer node (now without artifacts)
     const clone = viewer.cloneNode(true);
-    // Create a new container for PDF
-    const pdfContainer = document.createElement('div');
-    pdfContainer.id = 'pdf-container';
-    pdfContainer.style.cssText = `
-      width: 8.5in;
-      min-height: 11in;
-      margin: 0 auto;
-      padding: 0;
-      background: white;
-      position: relative;
-      font-family: Arial, sans-serif;
-      box-sizing: border-box;
-    `;
-    // Move all children from clone to pdfContainer
-    while (clone.firstChild) {
-      pdfContainer.appendChild(clone.firstChild);
-    }
-    // Replace body content
+    
+    // Replace body content directly without container wrapping
     document.body.innerHTML = '';
-    document.body.appendChild(pdfContainer);
+    document.body.appendChild(clone);
     document.body.style.cssText = 'margin: 0; padding: 0; background: white;';
     // Remove scrollbars
     document.documentElement.style.overflow = 'hidden';
+    
+    // Ensure figcaptions with hide-figcaption class are hidden in PDF
+    // Also add comprehensive font-size overrides for PDF generation
+    const pdfStyle = document.createElement('style');
+    pdfStyle.textContent = `
+      figcaption.hide-figcaption { display: none !important; }
+      
+      /* Comprehensive font-size overrides for PDF generation */
+      /* These must match the scaling applied in thorium-viewer.html */
+      /* Handle both spaced and non-spaced CSS syntax */
+      div[style*="font-size: 40px"], div[style*="font-size:40px"] {
+        font-size: 32px !important;
+      }
+      
+      div[style*="font-size: 30px"], div[style*="font-size:30px"] {
+        font-size: 24px !important;
+      }
+      
+      div[style*="font-size: 28px"], div[style*="font-size:28px"] {
+        font-size: 22px !important;
+      }
+      
+      div[style*="font-size: 26px"], div[style*="font-size:26px"] {
+        font-size: 20px !important;
+      }
+      
+      div[style*="font-size: 24px"], div[style*="font-size:24px"] {
+        font-size: 18px !important;
+      }
+      
+      div[style*="font-size: 15px"], div[style*="font-size:15px"] {
+        font-size: 12px !important;
+      }
+      
+      /* Preserve text alignment from inline styles */
+      div[style*="text-align: center"] {
+        text-align: center !important;
+      }
+      
+      div[style*="text-align: left"] {
+        text-align: left !important;
+      }
+      
+      div[style*="text-align: right"] {
+        text-align: right !important;
+      }
+      
+      /* Ensure proper display for headings */
+      div[style*="font-size"] {
+        display: block !important;
+        width: 100% !important;
+      }
+    `;
+    document.head.appendChild(pdfStyle);
+    
+    // AGGRESSIVE: Force font-size overrides via JavaScript DOM manipulation for PDF
+    console.log('[Playwright] Applying aggressive font-size overrides via DOM manipulation for PDF...');
+    
+    const fontSizeMap = {
+      '40px': '40px',  // PRESERVE original 40px
+      '30px': '30px',  // PRESERVE original 30px
+      '28px': '28px',  // PRESERVE original 28px
+      '26px': '26px',  // PRESERVE original 26px
+      '24px': '24px',  // PRESERVE original 24px
+      '15px': '15px'   // PRESERVE original 15px
+    };
+    
+    // Find all elements with inline font-size styles
+    const elementsWithFontSize = document.querySelectorAll('*[style*="font-size"]');
+    console.log(`[Playwright] Found ${elementsWithFontSize.length} elements with inline font-size`);
+    
+    elementsWithFontSize.forEach((element, index) => {
+      const currentStyle = element.getAttribute('style') || '';
+      console.log(`[Playwright] Element ${index + 1} original style: ${currentStyle}`);
+      
+      // Check each font size in our map
+      Object.keys(fontSizeMap).forEach(originalSize => {
+        const newSize = fontSizeMap[originalSize];
+        
+        // Check for both spaced and non-spaced versions
+        if (currentStyle.includes(`font-size: ${originalSize}`) || 
+            currentStyle.includes(`font-size:${originalSize}`)) {
+          
+          console.log(`[Playwright] Overriding ${originalSize} → ${newSize} for element:`, element.textContent.substring(0, 50) + '...');
+          
+          // Force the new font-size using setProperty with important
+          element.style.setProperty('font-size', newSize, 'important');
+          
+          // Verify the change
+          const computedSize = window.getComputedStyle(element).fontSize;
+          console.log(`[Playwright] Computed font-size after override: ${computedSize}`);
+        }
+      });
+    });
+    
+    // DIAGNOSTIC: Analyze font sizes after DOM manipulation
+    console.log('=== FONT SIZE ANALYSIS AFTER DOM MANIPULATION ===');
+    const newHeadings = document.querySelectorAll('h1, h2, h3, div[style*="font-size"]');
+    console.log('Heading elements after DOM change:', newHeadings.length);
+    newHeadings.forEach((heading, index) => {
+      const computed = window.getComputedStyle(heading);
+      console.log(`New Heading ${index + 1} (${heading.tagName}):`, {
+        fontSize: computed.fontSize,
+        fontFamily: computed.fontFamily,
+        textContent: heading.textContent.substring(0, 50) + '...'
+      });
+    });
   });
 
   // 7. Wait for layout to stabilize after DOM change
@@ -305,7 +563,7 @@ async function comprehensivePDFFix(page, outputPath) {
     format: 'Letter',
     printBackground: true,
     displayHeaderFooter: false,
-    margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
+    margin: { top: '0', right: '0', bottom: '0', left: '0' },
     preferCSSPageSize: false
   });
 
@@ -354,6 +612,10 @@ async function convertToPdf() {
     
     console.log('[Playwright] EPUB content detected, waiting for layout to stabilize...');
     await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // === OPUS FIX: Wait for styles and fonts, then diagnose ===
+    await waitForStylesAndFonts(page);
+    await diagnoseStylesAndFonts(page);
 
     console.log(`[Playwright] Generating PDF at: ${pdfPath}`);
     
