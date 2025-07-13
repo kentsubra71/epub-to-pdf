@@ -494,6 +494,16 @@ async function comprehensivePDFFix(page, outputPath) {
         padding-bottom: 370px !important;
       }
       
+      /* Preserve original TOC styling - restore EPUB hyperlink appearance */
+      nav[epub\\:type="toc"] a,
+      nav[role="doc-toc"] a,
+      #toc a {
+        color: #2A2CEA !important;
+        text-decoration: underline !important;
+        cursor: pointer !important;
+        pointer-events: auto !important;
+      }
+      
       div[style*="text-align: right"] {
         text-align: right !important;
       }
