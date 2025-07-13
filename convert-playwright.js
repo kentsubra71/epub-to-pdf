@@ -495,13 +495,37 @@ async function comprehensivePDFFix(page, outputPath) {
       }
       
       /* Preserve original TOC styling - restore EPUB hyperlink appearance */
+      /* Target all possible TOC link variations with maximum specificity */
       nav[epub\\:type="toc"] a,
       nav[role="doc-toc"] a,
-      #toc a {
+      #toc a,
+      nav[epub\\:type="toc"] ol a,
+      nav[role="doc-toc"] ol a,
+      #toc ol a,
+      nav[epub\\:type="toc"] li a,
+      nav[role="doc-toc"] li a,
+      #toc li a,
+      nav ol li a,
+      nav ol a,
+      nav li a,
+      body nav[epub\\:type="toc"] a,
+      body nav[role="doc-toc"] a,
+      body #toc a,
+      body nav ol li a,
+      html body nav a,
+      html body nav li a {
         color: #2A2CEA !important;
         text-decoration: underline !important;
         cursor: pointer !important;
         pointer-events: auto !important;
+      }
+      
+      /* Extra specificity override for any inherited color rules */
+      nav a[href*="xhtml/"],
+      nav a[href*="Frontmatter"],
+      nav a[href*="Lesson"] {
+        color: #2A2CEA !important;
+        text-decoration: underline !important;
       }
       
       div[style*="text-align: right"] {
