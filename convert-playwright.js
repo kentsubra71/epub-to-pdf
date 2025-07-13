@@ -457,27 +457,27 @@ async function comprehensivePDFFix(page, outputPath) {
       /* These must match the scaling applied in thorium-viewer.html */
       /* Handle both spaced and non-spaced CSS syntax */
       div[style*="font-size: 40px"], div[style*="font-size:40px"] {
-        font-size: 32px !important;
+        font-size: 40px !important;
       }
       
       div[style*="font-size: 30px"], div[style*="font-size:30px"] {
-        font-size: 24px !important;
+        font-size: 30px !important;
       }
       
       div[style*="font-size: 28px"], div[style*="font-size:28px"] {
-        font-size: 22px !important;
+        font-size: 28px !important;
       }
       
       div[style*="font-size: 26px"], div[style*="font-size:26px"] {
-        font-size: 20px !important;
+        font-size: 26px !important;
       }
       
       div[style*="font-size: 24px"], div[style*="font-size:24px"] {
-        font-size: 18px !important;
+        font-size: 24px !important;
       }
       
       div[style*="font-size: 15px"], div[style*="font-size:15px"] {
-        font-size: 12px !important;
+        font-size: 15px !important;
       }
       
       /* Preserve text alignment from inline styles */
@@ -487,6 +487,11 @@ async function comprehensivePDFFix(page, outputPath) {
       
       div[style*="text-align: left"] {
         text-align: left !important;
+      }
+      
+      /* Preserve inline padding styles that create section gaps */
+      [style*="padding-bottom: 370px"] {
+        padding-bottom: 370px !important;
       }
       
       div[style*="text-align: right"] {

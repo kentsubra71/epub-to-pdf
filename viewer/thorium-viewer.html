@@ -316,6 +316,11 @@
         box-sizing: border-box !important;
       }
       
+      /* Preserve inline padding styles that create section gaps */
+      .readium-section [style*="padding-bottom: 370px"] {
+        padding-bottom: 370px !important;
+      }
+      
       .readium-section:last-child {
         page-break-after: avoid !important;
       }
