@@ -1045,6 +1045,21 @@
       text-align: center !important;
     }
     
+    /* Fix centering for figures with text-center class */
+    figure.text-center {
+      display: flex !important;
+      justify-content: center !important;
+      align-items: center !important;
+      flex-direction: column !important;
+      text-align: center !important;
+      width: 100% !important;
+    }
+    
+    figure.text-center img {
+      display: block !important;
+      margin: 0 auto !important;
+    }
+    
     /* Preserve original TOC styling - restore EPUB hyperlink appearance */
     /* Target all possible TOC link variations with maximum specificity */
     nav[epub\\:type="toc"] a,

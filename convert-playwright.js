@@ -499,6 +499,21 @@ async function comprehensivePDFFix(page, outputPath) {
         text-align: left !important;
       }
       
+      /* Fix centering for figures with text-center class */
+      figure.text-center {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        flex-direction: column !important;
+        text-align: center !important;
+        width: 100% !important;
+      }
+      
+      figure.text-center img {
+        display: block !important;
+        margin: 0 auto !important;
+      }
+      
       /* Preserve inline padding styles that create section gaps */
       [style*="padding-bottom: 370px"] {
         padding-bottom: 370px !important;
