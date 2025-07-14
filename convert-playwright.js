@@ -62,7 +62,11 @@ async function inspectThoriumStructure(page) {
 // DEBUG: Find what's special about missing images
 async function analyzeImagePatterns(page) {
   const analysis = await page.evaluate(() => {
-    const viewer = document.querySelector('#viewer');
+    const viewer = document.querySelector('#viewer') || document.body;
+    if (!viewer) {
+      console.log('[DEBUG] No viewer element found, using document.body');
+      return { error: 'No viewer element found' };
+    }
     const allImages = Array.from(viewer.querySelectorAll('img'));
     
     // Group images by various characteristics
@@ -363,9 +367,15 @@ async function diagnoseStylesAndFonts(page) {
 
 // MAIN SOLUTION: Comprehensive fix
 async function comprehensivePDFFix(page, outputPath) {
-  // 1. First analyze what's wrong
-  const analysis = await analyzeImagePatterns(page);
-  console.log(`Found ${analysis.missingCount} missing images out of ${analysis.totalImages}`);
+  try {
+    // 1. First analyze what's wrong
+    const analysis = await analyzeImagePatterns(page);
+    if (analysis.error) {
+      console.log(`[WARNING] Image analysis failed: ${analysis.error}`);
+      // Continue without image analysis
+    } else {
+      console.log(`Found ${analysis.missingCount} missing images out of ${analysis.totalImages}`);
+    }
   
   // 1a. Check if EPUB content is actually loaded
   const epubLoaded = await page.evaluate(() => {
@@ -594,10 +604,151 @@ async function comprehensivePDFFix(page, outputPath) {
     });
   });
 
-  // 7. Wait for layout to stabilize after DOM change
+  // 7. COMPREHENSIVE ELEMENT ANALYSIS - Analyze all potential section headers
+  await page.evaluate(() => {
+    console.log('[Playwright] === COMPREHENSIVE ELEMENT ANALYSIS ===');
+    
+    // Analyze all elements that could be section headers
+    const potentialHeaders = document.querySelectorAll('h1, h2, h3, h4, h5, h6, div, p, span');
+    const headerAnalysis = [];
+    
+    potentialHeaders.forEach((element, index) => {
+      const computed = window.getComputedStyle(element);
+      const fontSize = parseFloat(computed.fontSize);
+      const fontWeight = computed.fontWeight;
+      const textAlign = computed.textAlign;
+      const textContent = element.textContent.trim();
+      
+      // Only analyze elements with meaningful text content and reasonable size
+      if (textContent.length > 0 && textContent.length < 200 && fontSize >= 16) {
+        headerAnalysis.push({
+          index: index,
+          tagName: element.tagName,
+          fontSize: fontSize,
+          fontSizeString: computed.fontSize,
+          fontWeight: fontWeight,
+          textAlign: textAlign,
+          color: computed.color,
+          backgroundColor: computed.backgroundColor,
+          display: computed.display,
+          position: computed.position,
+          marginTop: computed.marginTop,
+          marginBottom: computed.marginBottom,
+          paddingTop: computed.paddingTop,
+          paddingBottom: computed.paddingBottom,
+          textContent: textContent.substring(0, 60),
+          inlineStyle: element.getAttribute('style') || 'none',
+          className: element.className || 'none',
+          id: element.id || 'none'
+        });
+      }
+    });
+    
+    // Sort by font size (largest first) to identify hierarchy
+    headerAnalysis.sort((a, b) => b.fontSize - a.fontSize);
+    
+    console.log('=== POTENTIAL SECTION HEADERS (sorted by font size) ===');
+    headerAnalysis.forEach((header, index) => {
+      console.log(`${index + 1}. ${header.tagName} (${header.fontSize}px): "${header.textContent}"`);
+      console.log(`   - Font Weight: ${header.fontWeight}`);
+      console.log(`   - Text Align: ${header.textAlign}`);
+      console.log(`   - Color: ${header.color}`);
+      console.log(`   - Inline Style: ${header.inlineStyle}`);
+      console.log(`   - Class: ${header.className}`);
+      console.log(`   - ID: ${header.id}`);
+      console.log('   ---');
+    });
+    
+    // Group by font size to understand document structure
+    const fontSizeGroups = {};
+    headerAnalysis.forEach(header => {
+      const size = header.fontSize;
+      if (!fontSizeGroups[size]) {
+        fontSizeGroups[size] = [];
+      }
+      fontSizeGroups[size].push(header);
+    });
+    
+    console.log('=== FONT SIZE GROUPS ===');
+    Object.keys(fontSizeGroups).sort((a, b) => b - a).forEach(size => {
+      console.log(`${size}px (${fontSizeGroups[size].length} elements):`);
+      fontSizeGroups[size].forEach(header => {
+        console.log(`  - ${header.tagName}: "${header.textContent}"`);
+      });
+    });
+    
+    // Store analysis for page break logic
+    window.headerAnalysis = headerAnalysis;
+    window.fontSizeGroups = fontSizeGroups;
+  });
+
+  // 8. Add page breaks before major sections (PDF only)
+  await page.evaluate(() => {
+    console.log('[Playwright] Adding page breaks before major sections...');
+    
+    let pageBreaksAdded = 0;
+    
+    // Smart approach: Find the 2 largest font sizes in the entire EPUB and apply page breaks only to those
+    console.log('[Playwright] Analyzing font sizes to find top 2 largest in entire EPUB...');
+    
+    // Step 1: Collect all elements and their font sizes
+    const allElements = document.querySelectorAll('div');
+    const fontSizeMap = new Map();
+    
+    allElements.forEach((element) => {
+      const computed = window.getComputedStyle(element);
+      const fontSize = parseFloat(computed.fontSize);
+      const textContent = element.textContent.trim();
+      
+      // Only consider div elements with meaningful text content
+      if (textContent.length > 0 && textContent.length < 200 && fontSize >= 16) {
+        if (!fontSizeMap.has(fontSize)) {
+          fontSizeMap.set(fontSize, []);
+        }
+        fontSizeMap.get(fontSize).push({element, text: textContent});
+      }
+    });
+    
+    // Step 2: Find the 2 largest font sizes in the entire EPUB
+    const sortedFontSizes = Array.from(fontSizeMap.keys()).sort((a, b) => b - a);
+    const top2FontSizes = sortedFontSizes.slice(0, 2);
+    
+    console.log(`[Playwright] All font sizes found: ${sortedFontSizes.join(', ')}px`);
+    console.log(`[Playwright] Top 2 largest font sizes: ${top2FontSizes.join(', ')}px`);
+    
+    // Step 3: Apply page breaks before elements with top 2 font sizes
+    if (top2FontSizes.length > 0) {
+      top2FontSizes.forEach(fontSize => {
+        const elements = fontSizeMap.get(fontSize) || [];
+        
+        elements.forEach(({element, text}) => {
+          // Skip cover page elements (keep cover page as one)
+          if (text.includes('Teacher') && text.includes('Edition')) {
+            console.log(`[Playwright] Skipping cover page: ${text.substring(0, 30)}...`);
+            return;
+          }
+          if (text.includes('Grade K') && text.includes('Unit')) {
+            console.log(`[Playwright] Skipping cover page: ${text.substring(0, 30)}...`);
+            return;
+          }
+          
+          element.style.pageBreakBefore = 'always';
+          element.style.breakBefore = 'page';
+          pageBreaksAdded++;
+          console.log(`[Playwright] Added page break before ${fontSize}px div: ${text.substring(0, 40)}...`);
+        });
+      });
+    }
+    
+    // Note: Only adding page breaks before major DIV sections, not H1/H2 elements
+    
+    console.log(`[Playwright] Total page breaks added: ${pageBreaksAdded}`);
+  });
+
+  // 8. Wait for layout to stabilize after DOM change
   await page.waitForTimeout(1000);
 
-  // 8. Generate PDF
+  // 9. Generate PDF
   const pdf = await page.pdf({
     format: 'Letter',
     printBackground: true,
@@ -607,6 +758,193 @@ async function comprehensivePDFFix(page, outputPath) {
   });
 
   return pdf;
+  } catch (error) {
+    console.error('[Playwright] Error in comprehensivePDFFix:', error);
+    
+    // Fallback: Generate PDF without advanced fixes
+    console.log('[Playwright] Attempting fallback PDF generation...');
+    const fallbackPdf = await page.pdf({
+      format: 'Letter',
+      printBackground: true,
+      displayHeaderFooter: false,
+      margin: { top: '0', right: '0', bottom: '0', left: '0' },
+      preferCSSPageSize: false
+    });
+    
+    return fallbackPdf;
+  }
+}
+
+async function generateElementAnalysisPDF(page, outputPath) {
+  console.log('[Playwright] Generating element analysis PDF...');
+  
+  // Create comprehensive element analysis
+  const analysisData = await page.evaluate(() => {
+    const potentialHeaders = document.querySelectorAll('h1, h2, h3, h4, h5, h6, div, p, span');
+    const headerAnalysis = [];
+    
+    potentialHeaders.forEach((element, index) => {
+      const computed = window.getComputedStyle(element);
+      const fontSize = parseFloat(computed.fontSize);
+      const fontWeight = computed.fontWeight;
+      const textAlign = computed.textAlign;
+      const textContent = element.textContent.trim();
+      
+      // Only analyze elements with meaningful text content and reasonable font size
+      if (textContent.length > 0 && textContent.length < 200 && fontSize >= 16) {
+        headerAnalysis.push({
+          index,
+          tag: element.tagName.toLowerCase(),
+          text: textContent.substring(0, 100),
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          textAlign: textAlign,
+          color: computed.color,
+          backgroundColor: computed.backgroundColor,
+          display: computed.display,
+          position: computed.position,
+          marginTop: computed.marginTop,
+          marginBottom: computed.marginBottom,
+          paddingTop: computed.paddingTop,
+          paddingBottom: computed.paddingBottom,
+          inlineStyle: element.getAttribute('style') || '',
+          className: element.className || '',
+          id: element.id || ''
+        });
+      }
+    });
+    
+    // Sort by font size (largest first)
+    headerAnalysis.sort((a, b) => b.fontSize - a.fontSize);
+    
+    return headerAnalysis;
+  });
+  
+  // Create HTML content for the analysis
+  const analysisHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Element Analysis Report</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f0f0f0; padding: 10px; margin-bottom: 20px; }
+        .element { border: 1px solid #ddd; margin: 10px 0; padding: 10px; }
+        .element-header { font-weight: bold; color: #333; }
+        .element-details { margin-top: 5px; font-size: 12px; }
+        .element-text { background: #f9f9f9; padding: 5px; margin: 5px 0; font-style: italic; }
+        .font-size-group { background: #e8f4f8; padding: 10px; margin: 15px 0; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>EPUB Element Analysis Report</h1>
+        <p>Generated: ${new Date().toLocaleString()}</p>
+        <p>Total Elements Analyzed: ${analysisData.length}</p>
+      </div>
+      
+      <h2>All Elements (Sorted by Font Size)</h2>
+      <table>
+        <tr>
+          <th>Index</th>
+          <th>Tag</th>
+          <th>Font Size</th>
+          <th>Font Weight</th>
+          <th>Text Align</th>
+          <th>Text Content</th>
+          <th>ID</th>
+          <th>Class</th>
+          <th>Inline Style</th>
+        </tr>
+        ${analysisData.map(element => `
+          <tr>
+            <td>${element.index}</td>
+            <td>${element.tag.toUpperCase()}</td>
+            <td>${element.fontSize}px</td>
+            <td>${element.fontWeight}</td>
+            <td>${element.textAlign}</td>
+            <td title="${element.text}">${element.text.substring(0, 50)}${element.text.length > 50 ? '...' : ''}</td>
+            <td>${element.id}</td>
+            <td>${element.className}</td>
+            <td title="${element.inlineStyle}">${element.inlineStyle.substring(0, 30)}${element.inlineStyle.length > 30 ? '...' : ''}</td>
+          </tr>
+        `).join('')}
+      </table>
+      
+      <h2>Font Size Groups</h2>
+      ${(() => {
+        const fontSizeGroups = {};
+        analysisData.forEach(element => {
+          const size = element.fontSize;
+          if (!fontSizeGroups[size]) {
+            fontSizeGroups[size] = [];
+          }
+          fontSizeGroups[size].push(element);
+        });
+        
+        return Object.keys(fontSizeGroups)
+          .sort((a, b) => parseFloat(b) - parseFloat(a))
+          .map(size => `
+            <div class="font-size-group">
+              <h3>Font Size: ${size}px (${fontSizeGroups[size].length} elements)</h3>
+              ${fontSizeGroups[size].map(element => `
+                <div class="element">
+                  <div class="element-header">${element.tag.toUpperCase()}: ${element.text.substring(0, 60)}${element.text.length > 60 ? '...' : ''}</div>
+                  <div class="element-details">
+                    Weight: ${element.fontWeight} | Align: ${element.textAlign} | 
+                    Color: ${element.color} | Display: ${element.display}
+                    ${element.id ? ` | ID: ${element.id}` : ''}
+                    ${element.className ? ` | Class: ${element.className}` : ''}
+                  </div>
+                  ${element.inlineStyle ? `<div class="element-details">Inline Style: ${element.inlineStyle}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          `).join('');
+      })()}
+      
+      <h2>Potential Page Break Candidates</h2>
+      <p>Elements that might be good candidates for page breaks:</p>
+      ${analysisData
+        .filter(element => 
+          element.fontSize >= 24 && 
+          (element.fontWeight === 'bold' || element.fontWeight === '700' || element.fontWeight > 400 || element.textAlign === 'center')
+        )
+        .map(element => `
+          <div class="element">
+            <div class="element-header">CANDIDATE: ${element.tag.toUpperCase()} - ${element.text.substring(0, 80)}</div>
+            <div class="element-details">
+              Font: ${element.fontSize}px, Weight: ${element.fontWeight}, Align: ${element.textAlign}
+              ${element.id ? ` | ID: ${element.id}` : ''}
+              ${element.inlineStyle ? ` | Style: ${element.inlineStyle.substring(0, 100)}` : ''}
+            </div>
+          </div>
+        `).join('')}
+    </body>
+    </html>
+  `;
+  
+  // Set the HTML content
+  await page.setContent(analysisHTML);
+  
+  // Generate the analysis PDF
+  const analysisPdf = await page.pdf({
+    format: 'Letter',
+    printBackground: true,
+    displayHeaderFooter: false,
+    margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' }
+  });
+  
+  // Write the analysis PDF
+  const fs = require('fs');
+  const analysisPath = outputPath.replace('.pdf', '_ANALYSIS.pdf');
+  fs.writeFileSync(analysisPath, analysisPdf);
+  
+  console.log(`[Playwright] Element analysis PDF saved to: ${analysisPath}`);
+  return analysisPath;
 }
 
 async function convertToPdf() {
@@ -681,6 +1019,9 @@ async function convertToPdf() {
         console.log(`[Playwright] Using alternative filename: ${finalPdfPath}`);
       }
     }
+
+    // Generate element analysis PDF first (disabled)
+    // await generateElementAnalysisPDF(page, finalPdfPath);
 
     // Use Opus's comprehensive PDF fix approach
     console.log('[Playwright] Using Opus comprehensive PDF fix...');
