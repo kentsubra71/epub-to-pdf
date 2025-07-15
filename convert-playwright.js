@@ -366,15 +366,15 @@ async function diagnoseStylesAndFonts(page) {
 }
 
 // MAIN SOLUTION: Comprehensive fix
-async function comprehensivePDFFix(page, outputPath) {
+async function comprehensivePDFFix(page, outputPath, paginationSettings = { enablePagination: true, pageBreakThreshold: 0.8, minContentHeight: 100 }) {
   try {
-    // 1. First analyze what's wrong
-    const analysis = await analyzeImagePatterns(page);
+  // 1. First analyze what's wrong
+  const analysis = await analyzeImagePatterns(page);
     if (analysis.error) {
       console.log(`[WARNING] Image analysis failed: ${analysis.error}`);
       // Continue without image analysis
     } else {
-      console.log(`Found ${analysis.missingCount} missing images out of ${analysis.totalImages}`);
+  console.log(`Found ${analysis.missingCount} missing images out of ${analysis.totalImages}`);
     }
   
   // 1a. Check if EPUB content is actually loaded
@@ -697,47 +697,91 @@ async function comprehensivePDFFix(page, outputPath) {
     window.fontSizeGroups = fontSizeGroups;
   });
 
-  // 8. Add page breaks before major sections (PDF only)
+  // 8. Add page breaks before major sections (PDF only) - Smart filtering approach
   await page.evaluate(() => {
-    console.log('[Playwright] Adding page breaks before major sections...');
+    console.log('[Playwright] Adding page breaks before major sections with smart filtering...');
     
     let pageBreaksAdded = 0;
     
-    // Smart approach: Find the 2 largest font sizes in the entire EPUB and apply page breaks only to those
+    // Smart approach: Find the 2 largest font sizes globally but apply intelligent filtering
     console.log('[Playwright] Analyzing font sizes to find top 2 largest in entire EPUB...');
     
-    // Step 1: Collect all elements and their font sizes
+    // Step 1: Collect all div elements with their font sizes and positions
     const allElements = document.querySelectorAll('div');
     const fontSizeMap = new Map();
+    const elementsByFontSize = new Map();
     
-    allElements.forEach((element) => {
-      const computed = window.getComputedStyle(element);
-      const fontSize = parseFloat(computed.fontSize);
-      const textContent = element.textContent.trim();
-      
-      // Only consider div elements with meaningful text content
-      if (textContent.length > 0 && textContent.length < 200 && fontSize >= 16) {
-        if (!fontSizeMap.has(fontSize)) {
-          fontSizeMap.set(fontSize, []);
+    allElements.forEach((element, index) => {
+      try {
+        const computed = window.getComputedStyle(element);
+        const fontSize = parseFloat(computed.fontSize);
+        const textContent = element.textContent.trim();
+        
+        // Only consider div elements with meaningful text content
+        if (textContent.length > 0 && textContent.length < 200 && fontSize >= 16) {
+          // Get position safely - fallback to index-based ordering if getBoundingClientRect fails
+          let position = index * 100; // Default fallback position
+          try {
+            const rect = element.getBoundingClientRect();
+            if (rect && typeof rect.top === 'number' && !isNaN(rect.top)) {
+              position = rect.top;
+            }
+          } catch (e) {
+            console.log(`[Playwright] Warning: Could not get position for element ${index}, using fallback`);
+          }
+          
+          // Count occurrences of each font size
+          fontSizeMap.set(fontSize, (fontSizeMap.get(fontSize) || 0) + 1);
+          
+          // Group elements by font size with additional metadata
+          if (!elementsByFontSize.has(fontSize)) {
+            elementsByFontSize.set(fontSize, []);
+          }
+          elementsByFontSize.get(fontSize).push({
+            element: element,
+            text: textContent,
+            index: index,
+            position: position,
+            textLength: textContent.length
+          });
         }
-        fontSizeMap.get(fontSize).push({element, text: textContent});
+      } catch (e) {
+        console.log(`[Playwright] Warning: Error processing element ${index}:`, e.message);
       }
     });
     
-    // Step 2: Find the 2 largest font sizes in the entire EPUB
+    // Step 2: Find the 2 largest font sizes
     const sortedFontSizes = Array.from(fontSizeMap.keys()).sort((a, b) => b - a);
     const top2FontSizes = sortedFontSizes.slice(0, 2);
     
     console.log(`[Playwright] All font sizes found: ${sortedFontSizes.join(', ')}px`);
     console.log(`[Playwright] Top 2 largest font sizes: ${top2FontSizes.join(', ')}px`);
+    console.log(`[Playwright] Font size distribution:`, Object.fromEntries(fontSizeMap));
     
-    // Step 3: Apply page breaks before elements with top 2 font sizes
+    // Step 3: Apply smart filtering to prevent over-pagination
+    const pageBreakCandidates = [];
+    let lastPageBreakPosition = 0;
+    const MIN_CONTENT_DISTANCE = 200; // Minimum pixels between page breaks (reduced for better compatibility)
+    
     if (top2FontSizes.length > 0) {
       top2FontSizes.forEach(fontSize => {
-        const elements = fontSizeMap.get(fontSize) || [];
+        const elements = elementsByFontSize.get(fontSize) || [];
+        const occurrences = fontSizeMap.get(fontSize);
         
-        elements.forEach(({element, text}) => {
-          // Skip cover page elements (keep cover page as one)
+        console.log(`[Playwright] Processing ${elements.length} elements with font size ${fontSize}px (occurs ${occurrences} times)`);
+        
+        // Filter 1: Skip font sizes that appear too frequently (likely not section headers)
+        // Be more conservative - only skip if it appears more than 8 times
+        if (occurrences > 8) {
+          console.log(`[Playwright] Skipping font size ${fontSize}px - appears too frequently (${occurrences} times)`);
+          return;
+        }
+        
+        // Sort elements by position (top to bottom)
+        elements.sort((a, b) => a.position - b.position);
+        
+        elements.forEach(({ element, text, index, position, textLength }) => {
+          // Filter 2: Skip cover page elements
           if (text.includes('Teacher') && text.includes('Edition')) {
             console.log(`[Playwright] Skipping cover page: ${text.substring(0, 30)}...`);
             return;
@@ -747,17 +791,79 @@ async function comprehensivePDFFix(page, outputPath) {
             return;
           }
           
-          element.style.pageBreakBefore = 'always';
-          element.style.breakBefore = 'page';
-          pageBreaksAdded++;
-          console.log(`[Playwright] Added page break before ${fontSize}px div: ${text.substring(0, 40)}...`);
+          // Filter 3: Skip very short text (likely decorative elements)
+          if (textLength < 10) {
+            console.log(`[Playwright] Skipping short text element: "${text}"`);
+            return;
+          }
+          
+          // Filter 4: Ensure minimum distance from last page break
+          if (position - lastPageBreakPosition < MIN_CONTENT_DISTANCE) {
+            console.log(`[Playwright] Skipping element too close to previous break: "${text.substring(0, 30)}" (distance: ${position - lastPageBreakPosition}px)`);
+            return;
+          }
+          
+          // Filter 5: Skip elements that are likely part of the same content block
+          const isPartOfSameBlock = pageBreakCandidates.some(candidate => 
+            Math.abs(candidate.position - position) < 150 && 
+            (candidate.text.toLowerCase().includes(text.toLowerCase().split(' ')[0]) ||
+             text.toLowerCase().includes(candidate.text.toLowerCase().split(' ')[0]))
+          );
+          
+          if (isPartOfSameBlock) {
+            console.log(`[Playwright] Skipping element part of same content block: "${text.substring(0, 30)}"`);
+            return;
+          }
+          
+          // This element passed all filters - add to candidates
+          pageBreakCandidates.push({
+            element,
+            text,
+            index,
+            position,
+            fontSize
+          });
+          
+          lastPageBreakPosition = position;
         });
       });
     }
     
-    // Note: Only adding page breaks before major DIV sections, not H1/H2 elements
+    // Step 4: Apply page breaks to filtered candidates
+    pageBreakCandidates.forEach(({ element, text, index, fontSize }) => {
+      element.style.pageBreakBefore = 'always';
+      element.style.breakBefore = 'page';
+      pageBreaksAdded++;
+      
+      console.log(`[Playwright] Added page break before element ${index}: "${text.substring(0, 40)}" (${fontSize}px)`);
+    });
     
-    console.log(`[Playwright] Total page breaks added: ${pageBreaksAdded}`);
+    const totalPotentialCandidates = top2FontSizes.reduce((sum, size) => sum + (elementsByFontSize.get(size) || []).length, 0);
+    console.log(`[Playwright] Smart filtering results: ${pageBreakCandidates.length} page breaks added out of ${totalPotentialCandidates} potential candidates`);
+    
+    // Fallback: If smart filtering was too aggressive and we have no page breaks, 
+    // apply a simpler approach for the largest font size only
+    if (pageBreakCandidates.length === 0 && top2FontSizes.length > 0) {
+      console.log(`[Playwright] Smart filtering too aggressive, applying fallback for largest font size only`);
+      const largestFontSize = top2FontSizes[0];
+      const largestElements = elementsByFontSize.get(largestFontSize) || [];
+      
+      largestElements.forEach(({ element, text, index, fontSize }) => {
+        // Only apply basic cover page filter
+        if (text.includes('Teacher') && text.includes('Edition')) {
+          return;
+        }
+        if (text.includes('Grade K') && text.includes('Unit')) {
+          return;
+        }
+        
+        element.style.pageBreakBefore = 'always';
+        element.style.breakBefore = 'page';
+        pageBreaksAdded++;
+        
+        console.log(`[Playwright] Fallback: Added page break before element ${index}: "${text.substring(0, 40)}" (${fontSize}px)`);
+      });
+    }
   });
 
   // 8. Wait for layout to stabilize after DOM change
@@ -967,9 +1073,29 @@ async function convertToPdf() {
   const pdfPath = process.argv[3];
 
   if (!viewerUrl || !pdfPath) {
-    console.error('Usage: node convert-playwright.js <viewer_url> <output_pdf_path>');
+    console.error('Usage: node convert-playwright.js <viewer_url> <output_pdf_path> [--pagination=true] [--threshold=0.8] [--minHeight=100]');
     process.exit(1);
   }
+
+  // Parse command line arguments for pagination settings
+  const paginationSettings = {
+    enablePagination: true,
+    pageBreakThreshold: 0.8,
+    minContentHeight: 100
+  };
+
+  for (let i = 4; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg.startsWith('--pagination=')) {
+      paginationSettings.enablePagination = arg.split('=')[1] === 'true';
+    } else if (arg.startsWith('--threshold=')) {
+      paginationSettings.pageBreakThreshold = parseFloat(arg.split('=')[1]);
+    } else if (arg.startsWith('--minHeight=')) {
+      paginationSettings.minContentHeight = parseInt(arg.split('=')[1]);
+    }
+  }
+
+  console.log('[Playwright] Pagination settings:', paginationSettings);
 
   let browser;
   try {
@@ -985,22 +1111,24 @@ async function convertToPdf() {
     const page = await browser.newPage();
     
     await page.goto(viewerUrl, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 60000,
     });
     console.log('[Playwright] Page loaded.');
 
-    // Wait for EPUB content to be loaded and ready
+    // Wait for viewer element and some content
     console.log('[Playwright] Waiting for EPUB content to load...');
-    await page.waitForFunction(() => {
+    await page.waitForTimeout(5000); // Fixed wait
+    
+    // Check if we have basic content
+    const hasViewer = await page.evaluate(() => {
       const viewer = document.querySelector('#viewer');
-      if (!viewer) return false;
-      
-      const images = viewer.querySelectorAll('img');
-      const hasContent = viewer.innerHTML.length > 1000;
-      
-      return hasContent && images.length > 0;
-    }, { timeout: 60000 });
+      return !!viewer && viewer.innerHTML.length > 100;
+    });
+    
+    if (!hasViewer) {
+      console.log('[Playwright] Warning: Viewer content may not be fully loaded, proceeding anyway...');
+    }
     
     console.log('[Playwright] EPUB content detected, waiting for layout to stabilize...');
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -1040,7 +1168,7 @@ async function convertToPdf() {
 
     // Use Opus's comprehensive PDF fix approach
     console.log('[Playwright] Using Opus comprehensive PDF fix...');
-    const pdfBuffer = await comprehensivePDFFix(page, finalPdfPath);
+    const pdfBuffer = await comprehensivePDFFix(page, finalPdfPath, paginationSettings);
     
     // Write the PDF buffer to file
     fs.writeFileSync(finalPdfPath, pdfBuffer);

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Thorium-Style EPUB Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <style>
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      background: white;
+    }
+    
+    /* Frontend Interface Styles */
+    .interface {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .interface h1 {
+      margin: 0 0 20px 0;
+      font-size: 28px;
+      font-weight: 300;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+    }
+    
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: -9999px;
+      opacity: 0;
+      width: 0.1px;
+      height: 0.1px;
+    }
+    
+    .file-input-label {
+      background: rgba(255,255,255,0.2);
+      border: 2px dashed rgba(255,255,255,0.5);
+      padding: 15px 25px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-block;
+    }
+    
+    .file-input-label:hover {
+      background: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.8);
+    }
+    
+    .btn {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+    
+    .btn:hover {
+      background: #45a049;
+      transform: translateY(-1px);
+    }
+    
+    .btn:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .btn-export {
+      background: #ff6b6b;
+    }
+    
+    .btn-export:hover {
+      background: #ff5252;
+    }
+    
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .status.success {
+      background: rgba(76, 175, 80, 0.2);
+      border: 1px solid rgba(76, 175, 80, 0.5);
+    }
+    
+    .status.error {
+      background: rgba(244, 67, 54, 0.2);
+      border: 1px solid rgba(244, 67, 54, 0.5);
+    }
+    
+    .status.info {
+      background: rgba(33, 150, 243, 0.2);
+      border: 1px solid rgba(33, 150, 243, 0.5);
+    }
+    
+    /* Letter size indicator */
+    .letter-size-indicator {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(76, 175, 80, 0.9);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 1001;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    /* Letter-sized viewport for PDF conversion */
+    #viewer { 
+      width: 8.5in; /* Letter width */
+      height: 11in; /* Letter height */
+      max-width: 8.5in;
+      max-height: 11in;
+      border: 1px solid #ddd;
+      margin: 0;
+      position: relative;
+      background: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      overflow-y: auto;
+      overflow-x: hidden;
+      flex-shrink: 0;
+    }
+    
+    /* Navigation controls */
+    .nav-controls {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 50px;
+      height: 80px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+    
+    .nav-controls:hover {
+      background: rgba(0,0,0,0.9);
+      transform: translateY(-50%) scale(1.1);
+    }
+    
+    .nav-prev {
+      left: -80px;
+    }
+    
+    .nav-next {
+      right: -80px;
+    }
+    
+    /* Viewer container for navigation */
+    .viewer-container {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      width: 100%;
+      margin: 20px auto;
+      padding: 0 100px;
+    }
+    
+    /* Hide navigation for PDF mode */
+    .pdf-mode #viewer .readium-navigator-controls {
+      display: none !important;
+    }
+    
+    /* PDF mode: discrete pages */
+    .pdf-mode #viewer {
+      height: auto !important;
+      min-height: 11in;
+      overflow: visible !important;
+      width: 8.5in !important;
+      max-width: 8.5in !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      background: white !important;
+    }
+    
+    .pdf-mode .interface,
+    .pdf-mode .nav-controls,
+    .pdf-mode #debug,
+    .pdf-mode .letter-size-indicator {
+      display: none !important;
+    }
+    
+    .pdf-mode .readium-section {
+      page-break-after: always !important;
+      min-height: 9.5in !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      box-sizing: border-box !important;
+      width: auto !important;
+    }
+    
+    .pdf-mode .readium-section:last-child {
+      page-break-after: avoid !important;
+    }
+    
+    /* Allow EPUB's own margin variables to control layout */
+    .pdf-mode .readium-section > *:not(header):not(ul):not(ol):not(figure.full-bleed:not(.audio)) {
+      margin: var(--body-margin-top, 1.5rem) var(--body-margin-right, 6rem) var(--body-margin-bottom, 0.5rem) var(--body-margin-left, 6rem) !important;
+    }
+    
+    #debug { 
+      position: fixed; 
+      top: 10px; 
+      right: 10px; 
+      background: rgba(0,0,0,0.8); 
+      color: white; 
+      padding: 10px; 
+      font-family: monospace; 
+      font-size: 12px; 
+      max-width: 400px; 
+      max-height: 300px; 
+      overflow: auto; 
+      z-index: 1000;
+      border-radius: 4px;
+    }
+    
+    /* Readium-specific styles for better rendering */
+    .readium-navigator-content {
+      width: 100% !important;
+      height: auto !important;
+    }
+    
+    .readium-navigator-content iframe {
+      width: 100% !important;
+      height: auto !important;
+      border: none;
+    }
+    
+    /* Print styles - Letter size */
+    @media print {
+      @page {
+        size: letter;
+        margin: 0.5in;
+      }
+      
+      body { 
+        background: white; 
+        margin: 0;
+        padding: 0;
+      }
+      
+      #viewer { 
+        width: 7.5in !important; 
+        height: auto !important; 
+        min-height: 10in !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      
+      .interface,
+      .nav-controls,
+      #debug,
+      .letter-size-indicator { 
+        display: none !important; 
+      }
+      
+      .readium-content-container {
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      
+      .readium-section {
+        width: 7.5in !important;
+        min-height: 10in !important;
+        padding: 0.5in !important;
+        margin: 0 !important;
+        page-break-after: always !important;
+        box-sizing: border-box !important;
+      }
+      
+      /* Preserve inline padding styles that create section gaps */
+      .readium-section [style*="padding-bottom: 370px"] {
+        padding-bottom: 370px !important;
+      }
+      
+      .readium-section:last-child {
+        page-break-after: avoid !important;
+      }
+      
+      img, table, figure, .caption {
+        page-break-inside: avoid;
+        max-width: 6.5in;
+        height: auto;
+      }
+      
+      h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+      }
+      
+      .page-break, [data-page-break] {
+        page-break-before: always;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Frontend Interface -->
+  <div class="interface" id="interface">
+    <h1>📚 Thorium-Style EPUB Viewer</h1>
+    <div id="status-container">
+      <div id="status-message">Ready - Using Thorium/Readium rendering engine</div>
+    </div>
+  </div>
+  
+  <div class="letter-size-indicator">📄 Letter Size: 8.5" × 11"</div>
+  
+  <div class="viewer-container">
+    <button class="nav-controls nav-prev" id="nav-prev">‹</button>
+    <div id="viewer"></div>
+    <button class="nav-controls nav-next" id="nav-next">›</button>
+  </div>
+  
+  <div id="debug"></div>
+  
+  <script src="thorium-viewer.js"></script>
+</body>
+</html> 
