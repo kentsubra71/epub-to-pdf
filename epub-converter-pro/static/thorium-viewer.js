@@ -165,6 +165,11 @@ async function loadBookFromExtracted(bookName) {
     // Signal ready for PDF
     window.readyForPdf = true;
     
+    // Signal to parent window that EPUB is loaded
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'epub-loaded' }, window.location.origin);
+    }
+    
     showStatus('EPUB loaded with Readium-style rendering!', 'success');
     log('Book loaded successfully with Readium-style rendering');
     

@@ -6,14 +6,31 @@ import { useDropzone } from 'react-dropzone';
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; downloadUrl?: string } | null>(null);
   const [epubUrl, setEpubUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Listen for messages from the iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      
+      if (event.data.type === 'epub-loaded') {
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     if (!file) return;
     setFile(file);
     setResult(null);
+    setEpubUrl(null);
+    setIsLoading(true);
     
     try {
       const formData = new FormData();
@@ -30,14 +47,22 @@ export default function Home() {
           // Set iframe src to load the Thorium viewer with the book parameter
           const viewerUrl = `/thorium-viewer.html?book=${result.bookName}`;
           setEpubUrl(viewerUrl);
+          
+          // Fallback timeout in case message doesn't arrive
+          setTimeout(() => {
+            setIsLoading(false);
+          }, 8000);
         } else {
           console.error('Upload failed:', result.message);
+          setIsLoading(false);
         }
       } else {
         console.error('Upload request failed:', response.status);
+        setIsLoading(false);
       }
     } catch (error) {
       console.error('Upload error:', error);
+      setIsLoading(false);
     }
   };
 
@@ -183,13 +208,22 @@ export default function Home() {
         )}
       </div>
       {/* Main Preview Area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
         {epubUrl ? (
-          <iframe
-            src={epubUrl}
-            title="EPUB Preview"
-            className="w-full h-full border-0"
-          />
+          <>
+            <iframe
+              src={epubUrl}
+              title="EPUB Preview"
+              className="w-full h-full border-0"
+            />
+            {isLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-90 flex flex-col items-center justify-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
+                <div className="text-xl font-semibold text-gray-700 mb-2">Loading EPUB...</div>
+                <div className="text-sm text-gray-500">Rendering content, please wait</div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <div className="text-7xl mb-4">📖</div>

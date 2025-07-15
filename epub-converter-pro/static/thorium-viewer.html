@@ -20,6 +20,22 @@
       color: white;
       padding: 20px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      display: none; /* Hidden by default for cleaner view */
+    }
+    
+    /* Show interface only in PDF mode */
+    .pdf-mode .interface {
+      display: block;
+    }
+    
+    /* Hide status container by default */
+    #status-container {
+      display: none;
+    }
+    
+    /* Show status container only in PDF mode */
+    .pdf-mode #status-container {
+      display: block;
     }
     
     .interface h1 {
@@ -251,6 +267,12 @@
       overflow: auto; 
       z-index: 1000;
       border-radius: 4px;
+      display: none; /* Hidden by default, only shown in PDF mode */
+    }
+    
+    /* Show debug only in PDF mode */
+    .pdf-mode #debug {
+      display: block;
     }
     
     /* Readium-specific styles for better rendering */
